@@ -993,35 +993,43 @@ class LCD_People {
      * Create person from ActBlue data
      */
     private function create_person_from_actblue($donor, $contribution, $lineitem) {
-        // First create the WordPress user
-        $user_data = array(
-            'user_login' => $donor['email'],
-            'user_email' => $donor['email'],
-            'user_pass'  => wp_generate_password(),
-            'first_name' => $donor['firstname'],
-            'last_name'  => $donor['lastname'],
-            'display_name' => $donor['firstname'] . ' ' . $donor['lastname'],
-            'role' => 'subscriber'
-        );
+        // First check if a WordPress user with this email already exists
+        $existing_user = get_user_by('email', $donor['email']);
+        
+        if ($existing_user) {
+            $user_id = $existing_user->ID;
+        } else {
+            // Create new WordPress user
+            $user_data = array(
+                'user_login' => $donor['email'],
+                'user_email' => $donor['email'],
+                'user_pass'  => wp_generate_password(),
+                'first_name' => $donor['firstname'],
+                'last_name'  => $donor['lastname'],
+                'display_name' => $donor['firstname'] . ' ' . $donor['lastname'],
+                'role' => 'subscriber'
+            );
 
-        // Disable new user notification email
-        add_filter('send_email_change_email', '__return_false');
-        add_filter('send_password_change_email', '__return_false');
-        remove_action('register_new_user', 'wp_send_new_user_notifications');
-        remove_action('edit_user_created_user', 'wp_send_new_user_notifications');
+            // Disable new user notification email
+            add_filter('send_email_change_email', '__return_false');
+            add_filter('send_password_change_email', '__return_false');
+            remove_action('register_new_user', 'wp_send_new_user_notifications');
+            remove_action('edit_user_created_user', 'wp_send_new_user_notifications');
 
-        // Create the user
-        $user_id = wp_insert_user($user_data);
+            // Create the user
+            $user_id = wp_insert_user($user_data);
 
-        // Remove our filters
-        remove_filter('send_email_change_email', '__return_false');
-        remove_filter('send_password_change_email', '__return_false');
-        add_action('register_new_user', 'wp_send_new_user_notifications');
-        add_action('edit_user_created_user', 'wp_send_new_user_notifications');
+            // Remove our filters
+            remove_filter('send_email_change_email', '__return_false');
+            remove_filter('send_password_change_email', '__return_false');
+            add_action('register_new_user', 'wp_send_new_user_notifications');
+            add_action('edit_user_created_user', 'wp_send_new_user_notifications');
 
-        if (is_wp_error($user_id)) {
-            error_log('Failed to create WordPress user for ActBlue donor: ' . $user_id->get_error_message());
-            // Continue with person creation even if user creation fails
+            if (is_wp_error($user_id)) {
+                error_log('Failed to create WordPress user for ActBlue donor: ' . $user_id->get_error_message());
+                // Continue with person creation even if user creation fails
+                $user_id = null;
+            }
         }
 
         // Create post
@@ -1050,8 +1058,8 @@ class LCD_People {
         update_post_meta($person_id, '_lcd_person_start_date', $current_date);
         update_post_meta($person_id, '_lcd_person_end_date', date('Y-m-d', strtotime($current_date . ' +1 year')));
 
-        // Link the WordPress user to the person if user was created successfully
-        if (!is_wp_error($user_id)) {
+        // Link the WordPress user to the person if we have a valid user
+        if ($user_id && !is_wp_error($user_id)) {
             update_post_meta($person_id, '_lcd_person_user_id', $user_id);
             update_user_meta($user_id, self::USER_META_KEY, $person_id);
         }
