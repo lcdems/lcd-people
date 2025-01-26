@@ -397,10 +397,22 @@ class LCD_People {
         $membership_type = get_post_meta($post->ID, '_lcd_person_membership_type', true);
         $is_sustaining = get_post_meta($post->ID, '_lcd_person_is_sustaining', true);
         $dues_paid_via = get_post_meta($post->ID, '_lcd_person_dues_paid_via', true);
+        $actblue_lineitem_url = get_post_meta($post->ID, '_lcd_person_actblue_lineitem_url', true);
         ?>
         <table class="form-table">
             <tr>
-                <th><label for="lcd_person_membership_status"><?php _e('Membership Status', 'lcd-people'); ?></label></th>
+                <th><label for="lcd_person_membership_type"><?php _e('Membership Type', 'lcd-people'); ?></label></th>
+                <td>
+                    <select id="lcd_person_membership_type" name="lcd_person_membership_type">
+                        <option value=""><?php _e('None', 'lcd-people'); ?></option>
+                        <option value="paid" <?php selected($membership_type, 'paid'); ?>><?php _e('Paid', 'lcd-people'); ?></option>
+                        <option value="compulsary" <?php selected($membership_type, 'compulsary'); ?>><?php _e('Compulsary', 'lcd-people'); ?></option>
+                        <option value="gratis" <?php selected($membership_type, 'gratis'); ?>><?php _e('Gratis', 'lcd-people'); ?></option>
+                    </select>
+                </td>
+            </tr>
+            <tr>
+                <th><label for="lcd_person_membership_status"><?php _e('Status', 'lcd-people'); ?></label></th>
                 <td>
                     <select id="lcd_person_membership_status" name="lcd_person_membership_status">
                         <option value=""><?php _e('Not a Member', 'lcd-people'); ?></option>
@@ -418,32 +430,19 @@ class LCD_People {
                 </td>
             </tr>
             <tr>
-                <th><label for="lcd_person_start_date"><?php _e('Start Date', 'lcd-people'); ?></label></th>
+                <th><label><?php _e('Membership Period', 'lcd-people'); ?></label></th>
                 <td>
-                    <input type="date" id="lcd_person_start_date" name="lcd_person_start_date" value="<?php echo esc_attr($start_date); ?>">
+                    <label for="lcd_person_start_date"><?php _e('Start:', 'lcd-people'); ?></label>
+                    <input type="date" id="lcd_person_start_date" name="lcd_person_start_date" value="<?php echo esc_attr($start_date); ?>" style="width: auto;">
+                    &nbsp;&nbsp;
+                    <label for="lcd_person_end_date"><?php _e('End:', 'lcd-people'); ?></label>
+                    <input type="date" id="lcd_person_end_date" name="lcd_person_end_date" value="<?php echo esc_attr($end_date); ?>" style="width: auto;">
                 </td>
             </tr>
             <tr>
-                <th><label for="lcd_person_end_date"><?php _e('End Date', 'lcd-people'); ?></label></th>
+                <th><label><?php _e('Payment Details', 'lcd-people'); ?></label></th>
                 <td>
-                    <input type="date" id="lcd_person_end_date" name="lcd_person_end_date" value="<?php echo esc_attr($end_date); ?>">
-                </td>
-            </tr>
-            <tr>
-                <th><label for="lcd_person_membership_type"><?php _e('Membership Type', 'lcd-people'); ?></label></th>
-                <td>
-                    <select id="lcd_person_membership_type" name="lcd_person_membership_type">
-                        <option value=""><?php _e('None', 'lcd-people'); ?></option>
-                        <option value="paid" <?php selected($membership_type, 'paid'); ?>><?php _e('Paid', 'lcd-people'); ?></option>
-                        <option value="compulsary" <?php selected($membership_type, 'compulsary'); ?>><?php _e('Compulsary', 'lcd-people'); ?></option>
-                        <option value="gratis" <?php selected($membership_type, 'gratis'); ?>><?php _e('Gratis', 'lcd-people'); ?></option>
-                    </select>
-                </td>
-            </tr>
-            <tr>
-                <th><label for="lcd_person_dues_paid_via"><?php _e('Dues paid via', 'lcd-people'); ?></label></th>
-                <td>
-                    <select id="lcd_person_dues_paid_via" name="lcd_person_dues_paid_via">
+                    <select id="lcd_person_dues_paid_via" name="lcd_person_dues_paid_via" style="width: auto;">
                         <option value=""><?php _e('None', 'lcd-people'); ?></option>
                         <option value="actblue" <?php selected($dues_paid_via, 'actblue'); ?>><?php _e('ActBlue', 'lcd-people'); ?></option>
                         <option value="cash" <?php selected($dues_paid_via, 'cash'); ?>><?php _e('Cash', 'lcd-people'); ?></option>
@@ -451,6 +450,12 @@ class LCD_People {
                         <option value="transfer" <?php selected($dues_paid_via, 'transfer'); ?>><?php _e('Transfer', 'lcd-people'); ?></option>
                         <option value="in-kind" <?php selected($dues_paid_via, 'in-kind'); ?>><?php _e('In-Kind', 'lcd-people'); ?></option>
                     </select>
+                    <?php if ($dues_paid_via === 'actblue' && $actblue_lineitem_url): ?>
+                        <a href="<?php echo esc_url($actblue_lineitem_url); ?>" target="_blank" class="button button-small" style="margin-left: 10px;">
+                            <?php _e('View Payment on ActBlue', 'lcd-people'); ?>
+                            <span class="dashicons dashicons-external" style="vertical-align: middle; font-size: 16px; height: 16px; margin-left: 3px;"></span>
+                        </a>
+                    <?php endif; ?>
                 </td>
             </tr>
         </table>
@@ -664,6 +669,12 @@ class LCD_People {
             'default' => ''
         ));
 
+        register_setting('lcd_people_actblue_settings', 'lcd_people_actblue_dues_form', array(
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => 'lcdcc-dues'
+        ));
+
         add_settings_section(
             'lcd_people_actblue_section',
             __('ActBlue Integration Settings', 'lcd-people'),
@@ -691,6 +702,14 @@ class LCD_People {
             'lcd_people_actblue_password',
             __('Password', 'lcd-people'),
             array($this, 'render_password_field'),
+            'lcd-people-actblue-settings',
+            'lcd_people_actblue_section'
+        );
+
+        add_settings_field(
+            'lcd_people_actblue_dues_form',
+            __('Dues Form Name', 'lcd-people'),
+            array($this, 'render_dues_form_field'),
             'lcd-people-actblue-settings',
             'lcd_people_actblue_section'
         );
@@ -797,6 +816,17 @@ class LCD_People {
     }
 
     /**
+     * Render the dues form field
+     */
+    public function render_dues_form_field($args) {
+        $form_name = get_option('lcd_people_actblue_dues_form', 'lcdcc-dues');
+        ?>
+        <input type="text" name="lcd_people_actblue_dues_form" value="<?php echo esc_attr($form_name); ?>" class="regular-text">
+        <p class="description"><?php _e('The ActBlue contribution form name used for membership dues (e.g. lcdcc-dues)', 'lcd-people'); ?></p>
+        <?php
+    }
+
+    /**
      * Register REST API endpoint
      */
     public function register_rest_endpoint() {
@@ -846,6 +876,16 @@ class LCD_People {
         
         // Log the incoming webhook data
         error_log('ActBlue Webhook received: ' . print_r($params, true));
+
+        // Check if this is a dues payment
+        $dues_form = get_option('lcd_people_actblue_dues_form', 'lcdcc-dues');
+        if (empty($params['contribution']['contributionForm']) || 
+            $params['contribution']['contributionForm'] !== $dues_form) {
+            return array(
+                'success' => true,
+                'message' => 'Ignored - not a dues payment'
+            );
+        }
 
         // Validate required fields
         if (empty($params['donor']) || empty($params['donor']['email'])) {
