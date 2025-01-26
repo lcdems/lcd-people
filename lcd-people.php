@@ -949,10 +949,6 @@ class LCD_People {
         
         // Set payment method to ActBlue
         update_post_meta($person_id, '_lcd_person_dues_paid_via', 'actblue');
-
-        // Set sustaining member status based on recurring contribution
-        $is_recurring = !empty($contribution['recurringPeriod']);
-        update_post_meta($person_id, '_lcd_person_is_sustaining', $is_recurring ? '1' : '0');
         
         // Update start date if not already set
         $start_date = get_post_meta($person_id, '_lcd_person_start_date', true);
@@ -1053,10 +1049,6 @@ class LCD_People {
             update_post_meta($person_id, '_lcd_person_user_id', $user_id);
             update_user_meta($user_id, self::USER_META_KEY, $person_id);
         }
-
-        // Set sustaining member status based on recurring contribution
-        $is_recurring = !empty($contribution['recurringPeriod']);
-        update_post_meta($person_id, '_lcd_person_is_sustaining', $is_recurring ? '1' : '0');
 
         // Store the ActBlue lineitem URL for reference
         if (!empty($lineitem['lineitemId'])) {
