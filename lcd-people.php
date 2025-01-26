@@ -950,14 +950,17 @@ class LCD_People {
         // Set payment method to ActBlue
         update_post_meta($person_id, '_lcd_person_dues_paid_via', 'actblue');
         
+        // Get current date in site's timezone
+        $current_date = current_time('Y-m-d');
+        
         // Update start date if not already set
         $start_date = get_post_meta($person_id, '_lcd_person_start_date', true);
         if (empty($start_date)) {
-            update_post_meta($person_id, '_lcd_person_start_date', date('Y-m-d'));
+            update_post_meta($person_id, '_lcd_person_start_date', $current_date);
         }
 
         // Set end date to one year from now
-        $end_date = date('Y-m-d', strtotime('+1 year'));
+        $end_date = date('Y-m-d', strtotime($current_date . ' +1 year'));
         update_post_meta($person_id, '_lcd_person_end_date', $end_date);
 
         // Store the ActBlue lineitem URL for reference
@@ -1034,6 +1037,9 @@ class LCD_People {
             return $person_id;
         }
 
+        // Get current date in site's timezone
+        $current_date = current_time('Y-m-d');
+        
         // Set meta data
         update_post_meta($person_id, '_lcd_person_first_name', $donor['firstname']);
         update_post_meta($person_id, '_lcd_person_last_name', $donor['lastname']);
@@ -1041,8 +1047,8 @@ class LCD_People {
         update_post_meta($person_id, '_lcd_person_membership_status', 'active');
         update_post_meta($person_id, '_lcd_person_membership_type', 'paid');
         update_post_meta($person_id, '_lcd_person_dues_paid_via', 'actblue');
-        update_post_meta($person_id, '_lcd_person_start_date', date('Y-m-d'));
-        update_post_meta($person_id, '_lcd_person_end_date', date('Y-m-d', strtotime('+1 year')));
+        update_post_meta($person_id, '_lcd_person_start_date', $current_date);
+        update_post_meta($person_id, '_lcd_person_end_date', date('Y-m-d', strtotime($current_date . ' +1 year')));
 
         // Link the WordPress user to the person if user was created successfully
         if (!is_wp_error($user_id)) {
