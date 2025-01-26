@@ -61,6 +61,14 @@ class LCD_People {
 
         // Register REST API endpoint
         add_action('rest_api_init', array($this, 'register_rest_endpoint'));
+
+        // Register cron job for membership status updates
+        add_action('lcd_check_membership_statuses', array($this, 'check_membership_statuses'));
+        
+        // Schedule cron job if not already scheduled
+        if (!wp_next_scheduled('lcd_check_membership_statuses')) {
+            wp_schedule_event(strtotime('tomorrow midnight'), 'daily', 'lcd_check_membership_statuses');
+        }
     }
 
     public function enqueue_admin_scripts($hook) {
@@ -1090,10 +1098,79 @@ class LCD_People {
 
         return $person_id;
     }
+
+    /**
+     * Check and update membership statuses
+     */
+    public function check_membership_statuses() {
+        $current_date = current_time('Y-m-d');
+        
+        // Get active members whose end date has passed
+        $expired_members = get_posts(array(
+            'post_type' => 'lcd_person',
+            'posts_per_page' => -1,
+            'meta_query' => array(
+                'relation' => 'AND',
+                array(
+                    'key' => '_lcd_person_membership_status',
+                    'value' => 'active',
+                ),
+                array(
+                    'key' => '_lcd_person_end_date',
+                    'value' => $current_date,
+                    'compare' => '<',
+                    'type' => 'DATE'
+                )
+            )
+        ));
+
+        // Update expired members to grace period
+        foreach ($expired_members as $member) {
+            update_post_meta($member->ID, '_lcd_person_membership_status', 'grace');
+            do_action('lcd_member_status_changed', $member->ID, 'active', 'grace');
+        }
+
+        // Get grace period members who expired more than 30 days ago
+        $grace_cutoff_date = date('Y-m-d', strtotime($current_date . ' -30 days'));
+        
+        $inactive_members = get_posts(array(
+            'post_type' => 'lcd_person',
+            'posts_per_page' => -1,
+            'meta_query' => array(
+                'relation' => 'AND',
+                array(
+                    'key' => '_lcd_person_membership_status',
+                    'value' => 'grace',
+                ),
+                array(
+                    'key' => '_lcd_person_end_date',
+                    'value' => $grace_cutoff_date,
+                    'compare' => '<',
+                    'type' => 'DATE'
+                )
+            )
+        ));
+
+        // Update to inactive
+        foreach ($inactive_members as $member) {
+            update_post_meta($member->ID, '_lcd_person_membership_status', 'inactive');
+            do_action('lcd_member_status_changed', $member->ID, 'grace', 'inactive');
+        }
+    }
+
+    /**
+     * Clean up scheduled hooks on plugin deactivation
+     */
+    public static function deactivate() {
+        wp_clear_scheduled_hook('lcd_check_membership_statuses');
+    }
 }
 
 // Initialize the plugin
 function lcd_people_init() {
     LCD_People::get_instance();
 }
-add_action('plugins_loaded', 'lcd_people_init'); 
+add_action('plugins_loaded', 'lcd_people_init');
+
+// Register deactivation hook
+register_deactivation_hook(__FILE__, array('LCD_People', 'deactivate')); 
