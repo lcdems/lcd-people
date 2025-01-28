@@ -1245,7 +1245,26 @@ class LCD_People {
             return;
         }
 
-        $this->sync_person_to_sender($post_id);
+        // Don't sync if this is a revision
+        if (wp_is_post_revision($post_id)) {
+            return;
+        }
+
+        // Store previous status before any changes
+        $previous_status = get_post_meta($post_id, '_lcd_person_membership_status', true);
+        
+        // Let the normal save process happen
+        $this->save_meta_box_data($post_id);
+
+        // Store the previous status for next time
+        update_post_meta($post_id, '_lcd_person_previous_status', $previous_status);
+
+        // Sync to Sender.net
+        $sync_result = $this->sync_person_to_sender($post_id);
+
+        if (!$sync_result) {
+            error_log('Failed to sync person ' . $post_id . ' to Sender.net after save');
+        }
     }
 
     /**
@@ -1643,6 +1662,10 @@ class LCD_People {
         // Get current date in site's timezone
         $current_date = current_time('Y-m-d');
 
+        // Store the current status before changing it
+        $previous_status = get_post_meta($person_id, '_lcd_person_membership_status', true);
+        update_post_meta($person_id, '_lcd_person_previous_status', $previous_status);
+
         // Update person meta
         update_post_meta($person_id, '_lcd_person_membership_status', 'inactive');
         update_post_meta($person_id, '_lcd_person_is_sustaining', '0');
@@ -1650,7 +1673,11 @@ class LCD_People {
         update_post_meta($person_id, '_lcd_person_dues_paid_via', '');
 
         // Sync to Sender.net
-        $this->sync_person_to_sender($person_id);
+        $sync_result = $this->sync_person_to_sender($person_id);
+
+        if (!$sync_result) {
+            error_log('Failed to sync cancelled membership to Sender.net for person ' . $person_id);
+        }
 
         wp_send_json_success(array(
             'current_date' => $current_date,
