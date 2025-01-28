@@ -1178,6 +1178,20 @@ class LCD_People {
         // Get sustaining member status
         $is_sustaining = get_post_meta($person_id, '_lcd_person_is_sustaining', true);
 
+        // Format phone number if exists
+        $phone = get_post_meta($person_id, '_lcd_person_phone', true);
+        if (!empty($phone)) {
+            // Remove any non-digit characters
+            $phone = preg_replace('/[^0-9]/', '', $phone);
+            
+            // Add +1 country code for US numbers if not already present
+            if (strlen($phone) === 10) {
+                $phone = '+1' . $phone;
+            } elseif (strlen($phone) === 11 && $phone[0] === '1') {
+                $phone = '+' . $phone;
+            }
+        }
+
         $subscriber_data = array(
             'email' => $email,
             'firstname' => get_post_meta($person_id, '_lcd_person_first_name', true),
@@ -1188,9 +1202,13 @@ class LCD_People {
                 '{$membership_end_date}' => get_post_meta($person_id, '_lcd_person_end_date', true),
                 '{$sustaining_member}' => $is_sustaining ? 'true' : ''
             ),
-            'phone' => get_post_meta($person_id, '_lcd_person_phone', true),
             'trigger_automation' => false
         );
+
+        // Only add phone if it's properly formatted
+        if (!empty($phone)) {
+            $subscriber_data['phone'] = $phone;
+        }
 
         if ($existing_subscriber) {
             // Update existing subscriber
