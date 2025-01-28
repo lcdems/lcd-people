@@ -69,6 +69,12 @@ class LCD_People {
         if (!wp_next_scheduled('lcd_check_membership_statuses')) {
             wp_schedule_event(strtotime('tomorrow midnight'), 'daily', 'lcd_check_membership_statuses');
         }
+
+        // Add Sender.net sync hooks
+        add_action('lcd_person_actblue_created', array($this, 'handle_person_sync'), 10, 1);
+        add_action('lcd_person_actblue_updated', array($this, 'handle_person_sync'), 10, 1);
+        add_action('lcd_member_status_changed', array($this, 'handle_person_sync'), 10, 1);
+        add_action('save_post_lcd_person', array($this, 'handle_person_save'), 10, 3);
     }
 
     public function enqueue_admin_scripts($hook) {
@@ -651,6 +657,7 @@ class LCD_People {
      * Add the settings page to the admin menu
      */
     public function add_settings_page() {
+        // ActBlue Settings
         add_submenu_page(
             'edit.php?post_type=lcd_person',
             __('ActBlue Integration Settings', 'lcd-people'),
@@ -659,67 +666,58 @@ class LCD_People {
             'lcd-people-actblue-settings',
             array($this, 'render_settings_page')
         );
+
+        // Sender.net Settings
+        add_submenu_page(
+            'edit.php?post_type=lcd_person',
+            __('Sender.net Integration Settings', 'lcd-people'),
+            __('Sender.net Settings', 'lcd-people'),
+            'manage_options',
+            'lcd-people-sender-settings',
+            array($this, 'render_sender_settings_page')
+        );
     }
 
     /**
      * Register settings
      */
     public function register_settings() {
-        register_setting('lcd_people_actblue_settings', 'lcd_people_actblue_username', array(
+        // Existing ActBlue settings...
+
+        // Sender.net settings
+        register_setting('lcd_people_sender_settings', 'lcd_people_sender_token', array(
             'type' => 'string',
             'sanitize_callback' => 'sanitize_text_field',
             'default' => ''
         ));
 
-        register_setting('lcd_people_actblue_settings', 'lcd_people_actblue_password', array(
+        register_setting('lcd_people_sender_settings', 'lcd_people_sender_new_member_group', array(
             'type' => 'string',
             'sanitize_callback' => 'sanitize_text_field',
             'default' => ''
-        ));
-
-        register_setting('lcd_people_actblue_settings', 'lcd_people_actblue_dues_form', array(
-            'type' => 'string',
-            'sanitize_callback' => 'sanitize_text_field',
-            'default' => 'lcdcc-dues'
         ));
 
         add_settings_section(
-            'lcd_people_actblue_section',
-            __('ActBlue Integration Settings', 'lcd-people'),
-            array($this, 'render_settings_section'),
-            'lcd-people-actblue-settings'
+            'lcd_people_sender_section',
+            __('Sender.net Integration Settings', 'lcd-people'),
+            array($this, 'render_sender_settings_section'),
+            'lcd-people-sender-settings'
         );
 
         add_settings_field(
-            'lcd_people_webhook_url',
-            __('Webhook URL', 'lcd-people'),
-            array($this, 'render_webhook_url_field'),
-            'lcd-people-actblue-settings',
-            'lcd_people_actblue_section'
+            'lcd_people_sender_token',
+            __('API Token', 'lcd-people'),
+            array($this, 'render_sender_token_field'),
+            'lcd-people-sender-settings',
+            'lcd_people_sender_section'
         );
 
         add_settings_field(
-            'lcd_people_actblue_username',
-            __('Username', 'lcd-people'),
-            array($this, 'render_username_field'),
-            'lcd-people-actblue-settings',
-            'lcd_people_actblue_section'
-        );
-
-        add_settings_field(
-            'lcd_people_actblue_password',
-            __('Password', 'lcd-people'),
-            array($this, 'render_password_field'),
-            'lcd-people-actblue-settings',
-            'lcd_people_actblue_section'
-        );
-
-        add_settings_field(
-            'lcd_people_actblue_dues_form',
-            __('Dues Form Name', 'lcd-people'),
-            array($this, 'render_dues_form_field'),
-            'lcd-people-actblue-settings',
-            'lcd_people_actblue_section'
+            'lcd_people_sender_new_member_group',
+            __('New Member Group ID', 'lcd-people'),
+            array($this, 'render_new_member_group_field'),
+            'lcd-people-sender-settings',
+            'lcd_people_sender_section'
         );
     }
 
@@ -733,6 +731,13 @@ class LCD_People {
         ?>
         <div class="wrap">
             <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
+            
+            <?php
+            if (isset($_POST['test_sender_connection']) && check_admin_referer('test_sender_connection')) {
+                $this->test_sender_connection($_POST['test_email'], $_POST['test_firstname'], $_POST['test_lastname']);
+            }
+            ?>
+
             <form action="options.php" method="post">
                 <?php
                 settings_fields('lcd_people_actblue_settings');
@@ -740,98 +745,265 @@ class LCD_People {
                 submit_button();
                 ?>
             </form>
+
+            <hr>
+
+            <h2><?php _e('Test Connection', 'lcd-people'); ?></h2>
+            <form method="post" action="">
+                <?php wp_nonce_field('test_sender_connection'); ?>
+                <table class="form-table">
+                    <tr>
+                        <th><label for="test_email"><?php _e('Test Email', 'lcd-people'); ?></label></th>
+                        <td>
+                            <input type="email" name="test_email" id="test_email" class="regular-text" required>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><label for="test_firstname"><?php _e('Test First Name', 'lcd-people'); ?></label></th>
+                        <td>
+                            <input type="text" name="test_firstname" id="test_firstname" class="regular-text" required>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><label for="test_lastname"><?php _e('Test Last Name', 'lcd-people'); ?></label></th>
+                        <td>
+                            <input type="text" name="test_lastname" id="test_lastname" class="regular-text" required>
+                        </td>
+                    </tr>
+                </table>
+                <?php submit_button(__('Test Connection', 'lcd-people'), 'secondary', 'test_sender_connection'); ?>
+            </form>
         </div>
-        <style>
-            .password-toggle-wrapper {
-                position: relative;
-                display: inline-block;
-            }
-            .password-toggle-wrapper .dashicons {
-                position: absolute;
-                right: 10px;
-                top: 50%;
-                transform: translateY(-50%);
-                cursor: pointer;
-                color: #666;
-            }
-            .password-toggle-wrapper input[type="password"],
-            .password-toggle-wrapper input[type="text"] {
-                padding-right: 30px;
-            }
-        </style>
-        <script>
-        jQuery(document).ready(function($) {
-            $('.toggle-password').click(function() {
-                var input = $(this).prev('input');
-                var icon = $(this);
-                
-                if (input.attr('type') === 'password') {
-                    input.attr('type', 'text');
-                    icon.removeClass('dashicons-visibility').addClass('dashicons-hidden');
-                } else {
-                    input.attr('type', 'password');
-                    icon.removeClass('dashicons-hidden').addClass('dashicons-visibility');
-                }
-            });
-        });
-        </script>
         <?php
     }
 
-    /**
-     * Render the settings section description
-     */
-    public function render_settings_section($args) {
+    public function render_sender_settings_section() {
         ?>
-        <p><?php _e('Configure the credentials for the ActBlue webhook integration. These credentials will be used to authenticate incoming webhook requests.', 'lcd-people'); ?></p>
+        <p><?php _e('Configure your Sender.net API integration settings.', 'lcd-people'); ?></p>
         <?php
     }
 
-    /**
-     * Render the webhook URL field
-     */
-    public function render_webhook_url_field($args) {
-        $webhook_url = rest_url('lcd-people/v1/actblue-webhook');
-        ?>
-        <input type="text" value="<?php echo esc_attr($webhook_url); ?>" class="regular-text" readonly onclick="this.select();">
-        <p class="description"><?php _e('Configure this URL in ActBlue to receive webhook notifications. Click to select for copying.', 'lcd-people'); ?></p>
-        <?php
-    }
-
-    /**
-     * Render the username field
-     */
-    public function render_username_field($args) {
-        $username = get_option('lcd_people_actblue_username');
-        ?>
-        <input type="text" name="lcd_people_actblue_username" value="<?php echo esc_attr($username); ?>" class="regular-text">
-        <p class="description"><?php _e('Username for authenticating ActBlue webhook requests', 'lcd-people'); ?></p>
-        <?php
-    }
-
-    /**
-     * Render the password field
-     */
-    public function render_password_field($args) {
-        $password = get_option('lcd_people_actblue_password');
+    public function render_sender_token_field() {
+        $token = get_option('lcd_people_sender_token');
         ?>
         <div class="password-toggle-wrapper">
-            <input type="password" name="lcd_people_actblue_password" value="<?php echo esc_attr($password); ?>" class="regular-text">
+            <input type="password" name="lcd_people_sender_token" value="<?php echo esc_attr($token); ?>" class="regular-text">
             <span class="dashicons dashicons-visibility toggle-password"></span>
         </div>
-        <p class="description"><?php _e('Password for authenticating ActBlue webhook requests', 'lcd-people'); ?></p>
+        <p class="description"><?php _e('Your Sender.net API Bearer Token', 'lcd-people'); ?></p>
         <?php
     }
 
-    /**
-     * Render the dues form field
-     */
-    public function render_dues_form_field($args) {
-        $form_name = get_option('lcd_people_actblue_dues_form', 'lcdcc-dues');
+    public function render_new_member_group_field() {
+        $group_id = get_option('lcd_people_sender_new_member_group');
         ?>
-        <input type="text" name="lcd_people_actblue_dues_form" value="<?php echo esc_attr($form_name); ?>" class="regular-text">
-        <p class="description"><?php _e('The ActBlue contribution form name used for membership dues (e.g. lcdcc-dues)', 'lcd-people'); ?></p>
+        <input type="text" name="lcd_people_sender_new_member_group" value="<?php echo esc_attr($group_id); ?>" class="regular-text">
+        <p class="description"><?php _e('The Sender.net group ID to add new members to (e.g. dw2kEJ)', 'lcd-people'); ?></p>
         <?php
+    }
+
+    public function render_sender_settings_page() {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+        ?>
+        <div class="wrap">
+            <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
+            
+            <?php
+            if (isset($_POST['test_sender_connection']) && check_admin_referer('test_sender_connection')) {
+                $this->test_sender_connection($_POST['test_email'], $_POST['test_firstname'], $_POST['test_lastname']);
+            }
+            ?>
+
+            <form action="options.php" method="post">
+                <?php
+                settings_fields('lcd_people_sender_settings');
+                do_settings_sections('lcd-people-sender-settings');
+                submit_button();
+                ?>
+            </form>
+
+            <hr>
+
+            <h2><?php _e('Test Connection', 'lcd-people'); ?></h2>
+            <form method="post" action="">
+                <?php wp_nonce_field('test_sender_connection'); ?>
+                <table class="form-table">
+                    <tr>
+                        <th><label for="test_email"><?php _e('Test Email', 'lcd-people'); ?></label></th>
+                        <td>
+                            <input type="email" name="test_email" id="test_email" class="regular-text" required>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><label for="test_firstname"><?php _e('Test First Name', 'lcd-people'); ?></label></th>
+                        <td>
+                            <input type="text" name="test_firstname" id="test_firstname" class="regular-text" required>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><label for="test_lastname"><?php _e('Test Last Name', 'lcd-people'); ?></label></th>
+                        <td>
+                            <input type="text" name="test_lastname" id="test_lastname" class="regular-text" required>
+                        </td>
+                    </tr>
+                </table>
+                <?php submit_button(__('Test Connection', 'lcd-people'), 'secondary', 'test_sender_connection'); ?>
+            </form>
+        </div>
+        <?php
+    }
+
+    private function test_sender_connection($email, $firstname, $lastname) {
+        $token = get_option('lcd_people_sender_token');
+        if (empty($token)) {
+            add_settings_error(
+                'lcd_people_sender_settings',
+                'sender_test_failed',
+                __('API Token is required.', 'lcd-people'),
+                'error'
+            );
+            return;
+        }
+
+        $new_member_group = get_option('lcd_people_sender_new_member_group');
+        $groups = !empty($new_member_group) ? array($new_member_group) : array();
+
+        $response = wp_remote_post('https://api.sender.net/v2/subscribers', array(
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Content-Type' => 'application/json',
+                'Accept' => 'application/json'
+            ),
+            'body' => json_encode(array(
+                'email' => sanitize_email($email),
+                'firstname' => sanitize_text_field($firstname),
+                'lastname' => sanitize_text_field($lastname),
+                'groups' => $groups,
+                'fields' => array(
+                    '{$membership_status}' => 'test',
+                    '{$membership_end_date}' => date('Y-m-d'),
+                    '{$sustaining_member}' => 'true'
+                )
+            ))
+        ));
+
+        if (is_wp_error($response)) {
+            add_settings_error(
+                'lcd_people_sender_settings',
+                'sender_test_failed',
+                sprintf(__('Connection test failed: %s', 'lcd-people'), $response->get_error_message()),
+                'error'
+            );
+            return;
+        }
+
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+        $status = wp_remote_retrieve_response_code($response);
+
+        if ($status === 200 || $status === 201) {
+            add_settings_error(
+                'lcd_people_sender_settings',
+                'sender_test_success',
+                __('Connection test successful! Test subscriber created/updated.', 'lcd-people'),
+                'success'
+            );
+        } else {
+            add_settings_error(
+                'lcd_people_sender_settings',
+                'sender_test_failed',
+                sprintf(__('Connection test failed. Status: %d, Message: %s', 'lcd-people'), 
+                    $status, 
+                    isset($body['message']) ? $body['message'] : __('Unknown error', 'lcd-people')
+                ),
+                'error'
+            );
+        }
+    }
+
+    private function sync_person_to_sender($person_id) {
+        $token = get_option('lcd_people_sender_token');
+        if (empty($token)) {
+            return false;
+        }
+
+        $email = get_post_meta($person_id, '_lcd_person_email', true);
+        if (empty($email)) {
+            return false;
+        }
+
+        // Get current and previous membership status
+        $current_status = get_post_meta($person_id, '_lcd_person_membership_status', true);
+        $previous_status = get_post_meta($person_id, '_lcd_person_previous_status', true);
+
+        // Determine if this is a new member activation
+        $is_new_activation = ($previous_status === '' || $previous_status === false) && $current_status === 'active';
+        
+        // Get groups to sync
+        $groups = array();
+        if ($is_new_activation) {
+            $new_member_group = get_option('lcd_people_sender_new_member_group');
+            if (!empty($new_member_group)) {
+                $groups[] = $new_member_group;
+            }
+        }
+
+        // Get sustaining member status
+        $is_sustaining = get_post_meta($person_id, '_lcd_person_is_sustaining', true);
+
+        $response = wp_remote_post('https://api.sender.net/v2/subscribers', array(
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Content-Type' => 'application/json',
+                'Accept' => 'application/json'
+            ),
+            'body' => json_encode(array(
+                'email' => $email,
+                'firstname' => get_post_meta($person_id, '_lcd_person_first_name', true),
+                'lastname' => get_post_meta($person_id, '_lcd_person_last_name', true),
+                'groups' => $groups,
+                'fields' => array(
+                    '{$membership_status}' => $current_status,
+                    '{$membership_end_date}' => get_post_meta($person_id, '_lcd_person_end_date', true),
+                    '{$sustaining_member}' => $is_sustaining ? 'true' : ''
+                ),
+                'phone' => get_post_meta($person_id, '_lcd_person_phone', true),
+                'trigger_automation' => false
+            ))
+        ));
+
+        if (is_wp_error($response)) {
+            error_log('Sender.net sync failed for person ' . $person_id . ': ' . $response->get_error_message());
+            return false;
+        }
+
+        $status = wp_remote_retrieve_response_code($response);
+        if ($status !== 200 && $status !== 201) {
+            error_log('Sender.net sync failed for person ' . $person_id . '. Status: ' . $status);
+            return false;
+        }
+
+        // Store the current status as previous for next time
+        update_post_meta($person_id, '_lcd_person_previous_status', $current_status);
+
+        return true;
+    }
+
+    public function handle_person_sync($person_id) {
+        $this->sync_person_to_sender($person_id);
+    }
+
+    public function handle_person_save($post_id, $post, $update) {
+        if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
+            return;
+        }
+
+        if ($post->post_type !== 'lcd_person') {
+            return;
+        }
+
+        $this->sync_person_to_sender($post_id);
     }
 
     /**
@@ -949,6 +1121,55 @@ class LCD_People {
      * Update person from ActBlue data
      */
     private function update_person_from_actblue($person_id, $donor, $contribution, $lineitem) {
+        // Check if person has a linked WordPress user
+        $user_id = get_post_meta($person_id, '_lcd_person_user_id', true);
+        
+        if (!$user_id) {
+            // Check if a WordPress user with this email exists
+            $existing_user = get_user_by('email', $donor['email']);
+            
+            if ($existing_user) {
+                $user_id = $existing_user->ID;
+            } else {
+                // Create new WordPress user
+                $user_data = array(
+                    'user_login' => $donor['email'],
+                    'user_email' => $donor['email'],
+                    'user_pass'  => wp_generate_password(),
+                    'first_name' => $donor['firstname'],
+                    'last_name'  => $donor['lastname'],
+                    'display_name' => $donor['firstname'] . ' ' . $donor['lastname'],
+                    'role' => 'subscriber'
+                );
+
+                // Disable new user notification email
+                add_filter('send_email_change_email', '__return_false');
+                add_filter('send_password_change_email', '__return_false');
+                remove_action('register_new_user', 'wp_send_new_user_notifications');
+                remove_action('edit_user_created_user', 'wp_send_new_user_notifications');
+
+                // Create the user
+                $user_id = wp_insert_user($user_data);
+
+                // Remove our filters
+                remove_filter('send_email_change_email', '__return_false');
+                remove_filter('send_password_change_email', '__return_false');
+                add_action('register_new_user', 'wp_send_new_user_notifications');
+                add_action('edit_user_created_user', 'wp_send_new_user_notifications');
+
+                if (is_wp_error($user_id)) {
+                    error_log('Failed to create WordPress user for existing ActBlue donor: ' . $user_id->get_error_message());
+                    $user_id = null;
+                }
+            }
+
+            // Link the WordPress user to the person if we have a valid user
+            if ($user_id && !is_wp_error($user_id)) {
+                update_post_meta($person_id, '_lcd_person_user_id', $user_id);
+                update_user_meta($user_id, self::USER_META_KEY, $person_id);
+            }
+        }
+
         // Update membership status to active
         update_post_meta($person_id, '_lcd_person_membership_status', 'active');
         
