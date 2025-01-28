@@ -1123,23 +1123,30 @@ class LCD_People {
     private function sync_person_to_sender($person_id) {
         $token = get_option('lcd_people_sender_token');
         if (empty($token)) {
+            error_log('Sender.net sync failed: No API token configured');
             return false;
         }
 
         $email = get_post_meta($person_id, '_lcd_person_email', true);
         if (empty($email)) {
+            error_log('Sender.net sync failed: No email address for person ' . $person_id);
             return false;
         }
+
+        error_log('Starting Sender.net sync for person ' . $person_id . ' (' . $email . ')');
 
         // Get current and previous membership status
         $current_status = get_post_meta($person_id, '_lcd_person_membership_status', true);
         $previous_status = get_post_meta($person_id, '_lcd_person_previous_status', true);
 
+        error_log('Status transition: ' . $previous_status . ' → ' . $current_status);
+
         // Determine if this is a new member activation
         $is_new_activation = ($previous_status === '' || $previous_status === false) && $current_status === 'active';
         
         // First, try to get existing subscriber
-        $existing_subscriber = null;
+        error_log('Checking for existing subscriber in Sender.net...');
+        
         $response = wp_remote_get('https://api.sender.net/v2/subscribers/' . urlencode($email), array(
             'headers' => array(
                 'Authorization' => 'Bearer ' . $token,
@@ -1147,14 +1154,21 @@ class LCD_People {
             )
         ));
 
-        if (!is_wp_error($response)) {
-            $status = wp_remote_retrieve_response_code($response);
-            if ($status === 200) {
-                $body = json_decode(wp_remote_retrieve_body($response), true);
-                if (isset($body['data'])) {
-                    $existing_subscriber = $body['data'];
-                }
-            }
+        if (is_wp_error($response)) {
+            error_log('Error getting subscriber from Sender.net: ' . $response->get_error_message());
+            return false;
+        }
+
+        $status = wp_remote_retrieve_response_code($response);
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+        error_log('GET subscriber response: ' . print_r($body, true));
+
+        $existing_subscriber = null;
+        if ($status === 200 && isset($body['data'])) {
+            $existing_subscriber = $body['data'];
+            error_log('Found existing subscriber in Sender.net');
+        } else {
+            error_log('No existing subscriber found in Sender.net');
         }
 
         // Get groups to sync
@@ -1165,6 +1179,7 @@ class LCD_People {
             foreach ($existing_subscriber['subscriber_tags'] as $tag) {
                 $groups[] = $tag['id'];
             }
+            error_log('Existing groups: ' . implode(', ', $groups));
         }
 
         // Add new member group if this is a new activation
@@ -1172,6 +1187,7 @@ class LCD_People {
             $new_member_group = get_option('lcd_people_sender_new_member_group');
             if (!empty($new_member_group) && !in_array($new_member_group, $groups)) {
                 $groups[] = $new_member_group;
+                error_log('Added new member group: ' . $new_member_group);
             }
         }
 
@@ -1192,8 +1208,10 @@ class LCD_People {
             'trigger_automation' => false
         );
 
+        error_log('Preparing to send data to Sender.net: ' . print_r($subscriber_data, true));
+
         if ($existing_subscriber) {
-            // Update existing subscriber
+            error_log('Updating existing subscriber...');
             $response = wp_remote_request('https://api.sender.net/v2/subscribers/' . urlencode($email), array(
                 'method' => 'PATCH',
                 'headers' => array(
@@ -1204,7 +1222,7 @@ class LCD_People {
                 'body' => json_encode($subscriber_data)
             ));
         } else {
-            // Create new subscriber
+            error_log('Creating new subscriber...');
             $response = wp_remote_post('https://api.sender.net/v2/subscribers', array(
                 'headers' => array(
                     'Authorization' => 'Bearer ' . $token,
@@ -1216,15 +1234,20 @@ class LCD_People {
         }
 
         if (is_wp_error($response)) {
-            error_log('Sender.net sync failed for person ' . $person_id . ': ' . $response->get_error_message());
+            error_log('Sender.net sync failed: ' . $response->get_error_message());
             return false;
         }
 
         $status = wp_remote_retrieve_response_code($response);
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+        error_log('Sender.net API response: ' . print_r($body, true));
+
         if ($status !== 200 && $status !== 201) {
-            error_log('Sender.net sync failed for person ' . $person_id . '. Status: ' . $status);
+            error_log('Sender.net sync failed. Status: ' . $status . ', Response: ' . print_r($body, true));
             return false;
         }
+
+        error_log('Sender.net sync completed successfully');
 
         // Store the current status as previous for next time
         update_post_meta($person_id, '_lcd_person_previous_status', $current_status);
