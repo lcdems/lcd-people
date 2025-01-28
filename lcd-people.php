@@ -75,6 +75,9 @@ class LCD_People {
         add_action('lcd_person_actblue_updated', array($this, 'handle_person_sync'), 10, 1);
         add_action('lcd_member_status_changed', array($this, 'handle_person_sync'), 10, 1);
         add_action('save_post_lcd_person', array($this, 'handle_person_save'), 10, 3);
+
+        // Add cancel membership AJAX handler
+        add_action('wp_ajax_lcd_cancel_membership', array($this, 'ajax_cancel_membership'));
     }
 
     public function enqueue_admin_scripts($hook) {
@@ -434,6 +437,11 @@ class LCD_People {
                         <option value="inactive" <?php selected($membership_status, 'inactive'); ?>><?php _e('Inactive', 'lcd-people'); ?></option>
                         <option value="grace" <?php selected($membership_status, 'grace'); ?>><?php _e('Grace Period', 'lcd-people'); ?></option>
                     </select>
+                    <?php if ($membership_status === 'active'): ?>
+                        <button type="button" class="button button-secondary" id="lcd-cancel-membership">
+                            <?php _e('Cancel Membership', 'lcd-people'); ?>
+                        </button>
+                    <?php endif; ?>
                 </td>
             </tr>
             <tr>
@@ -473,6 +481,53 @@ class LCD_People {
                 </td>
             </tr>
         </table>
+
+        <script>
+        jQuery(document).ready(function($) {
+            $('#lcd-cancel-membership').on('click', function(e) {
+                e.preventDefault();
+                
+                if (!confirm('<?php _e('Are you sure you want to cancel this membership? This will update several fields and cannot be undone.', 'lcd-people'); ?>')) {
+                    return;
+                }
+
+                var $button = $(this);
+                $button.prop('disabled', true);
+
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'lcd_cancel_membership',
+                        nonce: '<?php echo wp_create_nonce('lcd_cancel_membership'); ?>',
+                        person_id: '<?php echo $post->ID; ?>'
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            // Update form fields
+                            $('#lcd_person_membership_status').val('inactive');
+                            $('#lcd_person_is_sustaining').prop('checked', false);
+                            $('#lcd_person_end_date').val(response.data.current_date);
+                            $('#lcd_person_dues_paid_via').val('');
+                            
+                            // Hide the cancel button
+                            $button.hide();
+                            
+                            // Show success message
+                            alert('<?php _e('Membership has been cancelled successfully.', 'lcd-people'); ?>');
+                        } else {
+                            alert(response.data.message || '<?php _e('Failed to cancel membership.', 'lcd-people'); ?>');
+                            $button.prop('disabled', false);
+                        }
+                    },
+                    error: function() {
+                        alert('<?php _e('Failed to cancel membership.', 'lcd-people'); ?>');
+                        $button.prop('disabled', false);
+                    }
+                });
+            });
+        });
+        </script>
         <?php
     }
 
@@ -1571,6 +1626,36 @@ class LCD_People {
      */
     public static function deactivate() {
         wp_clear_scheduled_hook('lcd_check_membership_statuses');
+    }
+
+    public function ajax_cancel_membership() {
+        check_ajax_referer('lcd_cancel_membership', 'nonce');
+
+        if (!current_user_can('edit_posts')) {
+            wp_send_json_error(array('message' => __('Permission denied.', 'lcd-people')));
+        }
+
+        $person_id = intval($_POST['person_id']);
+        if (!$person_id) {
+            wp_send_json_error(array('message' => __('Invalid person ID.', 'lcd-people')));
+        }
+
+        // Get current date in site's timezone
+        $current_date = current_time('Y-m-d');
+
+        // Update person meta
+        update_post_meta($person_id, '_lcd_person_membership_status', 'inactive');
+        update_post_meta($person_id, '_lcd_person_is_sustaining', '0');
+        update_post_meta($person_id, '_lcd_person_end_date', $current_date);
+        update_post_meta($person_id, '_lcd_person_dues_paid_via', '');
+
+        // Sync to Sender.net
+        $this->sync_person_to_sender($person_id);
+
+        wp_send_json_success(array(
+            'current_date' => $current_date,
+            'message' => __('Membership cancelled successfully.', 'lcd-people')
+        ));
     }
 }
 
