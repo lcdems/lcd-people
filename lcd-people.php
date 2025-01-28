@@ -810,10 +810,31 @@ class LCD_People {
         <div class="wrap">
             <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
             
+            <style>
+                .sender-test-log {
+                    background: #fff;
+                    border-left: 4px solid #fff;
+                    box-shadow: 0 1px 1px 0 rgba(0,0,0,.1);
+                    margin: 10px 0;
+                    padding: 1px 12px;
+                }
+                .sender-test-log p {
+                    margin: 0.5em 0;
+                    padding: 2px;
+                }
+                .sender-test-log.success {
+                    border-left-color: #00a32a;
+                }
+                .sender-test-log.error {
+                    border-left-color: #d63638;
+                }
+            </style>
+
             <?php
             if (isset($_POST['test_sender_connection']) && check_admin_referer('test_sender_connection')) {
                 $this->test_sender_connection($_POST['test_email'], $_POST['test_firstname'], $_POST['test_lastname']);
             }
+            settings_errors('lcd_people_sender_settings');
             ?>
 
             <form action="options.php" method="post">
@@ -867,56 +888,136 @@ class LCD_People {
             return;
         }
 
-        $new_member_group = get_option('lcd_people_sender_new_member_group');
-        $groups = !empty($new_member_group) ? array($new_member_group) : array();
+        $log = array();
+        $log[] = __('Starting test connection...', 'lcd-people');
+        $log[] = sprintf(__('Looking for existing subscriber with email: %s', 'lcd-people'), $email);
 
-        $response = wp_remote_post('https://api.sender.net/v2/subscribers', array(
+        // First, try to get existing subscriber
+        $existing_subscriber = null;
+        $response = wp_remote_get('https://api.sender.net/v2/subscribers/' . urlencode($email), array(
             'headers' => array(
                 'Authorization' => 'Bearer ' . $token,
-                'Content-Type' => 'application/json',
                 'Accept' => 'application/json'
-            ),
-            'body' => json_encode(array(
-                'email' => sanitize_email($email),
-                'firstname' => sanitize_text_field($firstname),
-                'lastname' => sanitize_text_field($lastname),
-                'groups' => $groups,
-                'fields' => array(
-                    '{$membership_status}' => 'test',
-                    '{$membership_end_date}' => date('Y-m-d'),
-                    '{$sustaining_member}' => 'true'
-                )
-            ))
+            )
         ));
 
         if (is_wp_error($response)) {
+            $log[] = sprintf(__('Error checking for existing subscriber: %s', 'lcd-people'), $response->get_error_message());
             add_settings_error(
                 'lcd_people_sender_settings',
                 'sender_test_failed',
-                sprintf(__('Connection test failed: %s', 'lcd-people'), $response->get_error_message()),
+                implode('<br>', $log),
                 'error'
             );
             return;
         }
 
-        $body = json_decode(wp_remote_retrieve_body($response), true);
         $status = wp_remote_retrieve_response_code($response);
+        $body = json_decode(wp_remote_retrieve_body($response), true);
 
-        if ($status === 200 || $status === 201) {
-            add_settings_error(
-                'lcd_people_sender_settings',
-                'sender_test_success',
-                __('Connection test successful! Test subscriber created/updated.', 'lcd-people'),
-                'success'
-            );
+        if ($status === 200 && isset($body['data'])) {
+            $existing_subscriber = $body['data'];
+            $log[] = __('Existing subscriber found', 'lcd-people');
+            if (!empty($existing_subscriber['subscriber_tags'])) {
+                $group_names = array_map(function($tag) {
+                    return $tag['title'];
+                }, $existing_subscriber['subscriber_tags']);
+                $log[] = sprintf(__('Current groups: %s', 'lcd-people'), implode(', ', $group_names));
+            }
         } else {
+            $log[] = __('No existing subscriber found, will create new', 'lcd-people');
+        }
+
+        // Get groups to sync
+        $groups = array();
+        if ($existing_subscriber && isset($existing_subscriber['subscriber_tags'])) {
+            foreach ($existing_subscriber['subscriber_tags'] as $tag) {
+                $groups[] = $tag['id'];
+            }
+        }
+
+        // Add test group if configured
+        $new_member_group = get_option('lcd_people_sender_new_member_group');
+        if (!empty($new_member_group)) {
+            $groups[] = $new_member_group;
+            $log[] = sprintf(__('Adding test group ID: %s', 'lcd-people'), $new_member_group);
+        }
+
+        $subscriber_data = array(
+            'email' => sanitize_email($email),
+            'firstname' => sanitize_text_field($firstname),
+            'lastname' => sanitize_text_field($lastname),
+            'groups' => $groups,
+            'fields' => array(
+                '{$membership_status}' => 'test',
+                '{$membership_end_date}' => date('Y-m-d'),
+                '{$sustaining_member}' => 'true'
+            )
+        );
+
+        $log[] = __('Preparing to sync test data...', 'lcd-people');
+
+        if ($existing_subscriber) {
+            $log[] = __('Updating existing subscriber...', 'lcd-people');
+            $response = wp_remote_request('https://api.sender.net/v2/subscribers/' . urlencode($email), array(
+                'method' => 'PATCH',
+                'headers' => array(
+                    'Authorization' => 'Bearer ' . $token,
+                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/json'
+                ),
+                'body' => json_encode($subscriber_data)
+            ));
+        } else {
+            $log[] = __('Creating new subscriber...', 'lcd-people');
+            $response = wp_remote_post('https://api.sender.net/v2/subscribers', array(
+                'headers' => array(
+                    'Authorization' => 'Bearer ' . $token,
+                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/json'
+                ),
+                'body' => json_encode($subscriber_data)
+            ));
+        }
+
+        if (is_wp_error($response)) {
+            $log[] = sprintf(__('Error syncing subscriber: %s', 'lcd-people'), $response->get_error_message());
             add_settings_error(
                 'lcd_people_sender_settings',
                 'sender_test_failed',
-                sprintf(__('Connection test failed. Status: %d, Message: %s', 'lcd-people'), 
-                    $status, 
-                    isset($body['message']) ? $body['message'] : __('Unknown error', 'lcd-people')
-                ),
+                implode('<br>', $log),
+                'error'
+            );
+            return;
+        }
+
+        $status = wp_remote_retrieve_response_code($response);
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+
+        if ($status === 200 || $status === 201) {
+            $log[] = __('Sync completed successfully!', 'lcd-people');
+            if (isset($body['data'])) {
+                $log[] = sprintf(
+                    __('Subscriber ID: %s', 'lcd-people'),
+                    $body['data']['id']
+                );
+            }
+            add_settings_error(
+                'lcd_people_sender_settings',
+                'sender_test_success',
+                implode('<br>', $log),
+                'success'
+            );
+        } else {
+            $log[] = sprintf(
+                __('Sync failed. Status: %d, Message: %s', 'lcd-people'),
+                $status,
+                isset($body['message']) ? $body['message'] : __('Unknown error', 'lcd-people')
+            );
+            add_settings_error(
+                'lcd_people_sender_settings',
+                'sender_test_failed',
+                implode('<br>', $log),
                 'error'
             );
         }
@@ -940,11 +1041,39 @@ class LCD_People {
         // Determine if this is a new member activation
         $is_new_activation = ($previous_status === '' || $previous_status === false) && $current_status === 'active';
         
+        // First, try to get existing subscriber
+        $existing_subscriber = null;
+        $response = wp_remote_get('https://api.sender.net/v2/subscribers/' . urlencode($email), array(
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Accept' => 'application/json'
+            )
+        ));
+
+        if (!is_wp_error($response)) {
+            $status = wp_remote_retrieve_response_code($response);
+            if ($status === 200) {
+                $body = json_decode(wp_remote_retrieve_body($response), true);
+                if (isset($body['data'])) {
+                    $existing_subscriber = $body['data'];
+                }
+            }
+        }
+
         // Get groups to sync
         $groups = array();
+        
+        // If subscriber exists, preserve their existing groups
+        if ($existing_subscriber && isset($existing_subscriber['subscriber_tags'])) {
+            foreach ($existing_subscriber['subscriber_tags'] as $tag) {
+                $groups[] = $tag['id'];
+            }
+        }
+
+        // Add new member group if this is a new activation
         if ($is_new_activation) {
             $new_member_group = get_option('lcd_people_sender_new_member_group');
-            if (!empty($new_member_group)) {
+            if (!empty($new_member_group) && !in_array($new_member_group, $groups)) {
                 $groups[] = $new_member_group;
             }
         }
@@ -952,26 +1081,42 @@ class LCD_People {
         // Get sustaining member status
         $is_sustaining = get_post_meta($person_id, '_lcd_person_is_sustaining', true);
 
-        $response = wp_remote_post('https://api.sender.net/v2/subscribers', array(
-            'headers' => array(
-                'Authorization' => 'Bearer ' . $token,
-                'Content-Type' => 'application/json',
-                'Accept' => 'application/json'
+        $subscriber_data = array(
+            'email' => $email,
+            'firstname' => get_post_meta($person_id, '_lcd_person_first_name', true),
+            'lastname' => get_post_meta($person_id, '_lcd_person_last_name', true),
+            'groups' => $groups,
+            'fields' => array(
+                '{$membership_status}' => $current_status,
+                '{$membership_end_date}' => get_post_meta($person_id, '_lcd_person_end_date', true),
+                '{$sustaining_member}' => $is_sustaining ? 'true' : ''
             ),
-            'body' => json_encode(array(
-                'email' => $email,
-                'firstname' => get_post_meta($person_id, '_lcd_person_first_name', true),
-                'lastname' => get_post_meta($person_id, '_lcd_person_last_name', true),
-                'groups' => $groups,
-                'fields' => array(
-                    '{$membership_status}' => $current_status,
-                    '{$membership_end_date}' => get_post_meta($person_id, '_lcd_person_end_date', true),
-                    '{$sustaining_member}' => $is_sustaining ? 'true' : ''
+            'phone' => get_post_meta($person_id, '_lcd_person_phone', true),
+            'trigger_automation' => false
+        );
+
+        if ($existing_subscriber) {
+            // Update existing subscriber
+            $response = wp_remote_request('https://api.sender.net/v2/subscribers/' . urlencode($email), array(
+                'method' => 'PATCH',
+                'headers' => array(
+                    'Authorization' => 'Bearer ' . $token,
+                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/json'
                 ),
-                'phone' => get_post_meta($person_id, '_lcd_person_phone', true),
-                'trigger_automation' => false
-            ))
-        ));
+                'body' => json_encode($subscriber_data)
+            ));
+        } else {
+            // Create new subscriber
+            $response = wp_remote_post('https://api.sender.net/v2/subscribers', array(
+                'headers' => array(
+                    'Authorization' => 'Bearer ' . $token,
+                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/json'
+                ),
+                'body' => json_encode($subscriber_data)
+            ));
+        }
 
         if (is_wp_error($response)) {
             error_log('Sender.net sync failed for person ' . $person_id . ': ' . $response->get_error_message());
