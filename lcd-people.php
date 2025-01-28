@@ -885,7 +885,7 @@ class LCD_People {
                 }
             </style>
 
-            <?php
+        <?php
             if (isset($_POST['test_sender_connection']) && check_admin_referer('test_sender_connection')) {
                 $this->test_sender_connection(
                     $_POST['test_email'], 
