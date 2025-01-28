@@ -832,7 +832,13 @@ class LCD_People {
 
             <?php
             if (isset($_POST['test_sender_connection']) && check_admin_referer('test_sender_connection')) {
-                $this->test_sender_connection($_POST['test_email'], $_POST['test_firstname'], $_POST['test_lastname']);
+                $this->test_sender_connection(
+                    $_POST['test_email'], 
+                    $_POST['test_firstname'], 
+                    $_POST['test_lastname'],
+                    $_POST['test_previous_status'],
+                    $_POST['test_new_status']
+                );
             }
             settings_errors('lcd_people_sender_settings');
             ?>
@@ -869,6 +875,30 @@ class LCD_People {
                             <input type="text" name="test_lastname" id="test_lastname" class="regular-text" required>
                         </td>
                     </tr>
+                    <tr>
+                        <th><label for="test_previous_status"><?php _e('Previous Status', 'lcd-people'); ?></label></th>
+                        <td>
+                            <select name="test_previous_status" id="test_previous_status">
+                                <option value=""><?php _e('Not a Member', 'lcd-people'); ?></option>
+                                <option value="active"><?php _e('Active', 'lcd-people'); ?></option>
+                                <option value="inactive"><?php _e('Inactive', 'lcd-people'); ?></option>
+                                <option value="grace"><?php _e('Grace Period', 'lcd-people'); ?></option>
+                            </select>
+                            <p class="description"><?php _e('Simulate previous membership status', 'lcd-people'); ?></p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><label for="test_new_status"><?php _e('New Status', 'lcd-people'); ?></label></th>
+                        <td>
+                            <select name="test_new_status" id="test_new_status">
+                                <option value=""><?php _e('Not a Member', 'lcd-people'); ?></option>
+                                <option value="active"><?php _e('Active', 'lcd-people'); ?></option>
+                                <option value="inactive"><?php _e('Inactive', 'lcd-people'); ?></option>
+                                <option value="grace"><?php _e('Grace Period', 'lcd-people'); ?></option>
+                            </select>
+                            <p class="description"><?php _e('Simulate new membership status', 'lcd-people'); ?></p>
+                        </td>
+                    </tr>
                 </table>
                 <?php submit_button(__('Test Connection', 'lcd-people'), 'secondary', 'test_sender_connection'); ?>
             </form>
@@ -876,7 +906,7 @@ class LCD_People {
         <?php
     }
 
-    private function test_sender_connection($email, $firstname, $lastname) {
+    private function test_sender_connection($email, $firstname, $lastname, $previous_status = '', $new_status = '') {
         $token = get_option('lcd_people_sender_token');
         if (empty($token)) {
             add_settings_error(
@@ -936,11 +966,23 @@ class LCD_People {
             }
         }
 
-        // Add test group if configured
-        $new_member_group = get_option('lcd_people_sender_new_member_group');
-        if (!empty($new_member_group)) {
-            $groups[] = $new_member_group;
-            $log[] = sprintf(__('Adding test group ID: %s', 'lcd-people'), $new_member_group);
+        // Check if this is a new member activation
+        $is_new_activation = ($previous_status === '' || $previous_status === false) && $new_status === 'active';
+        if ($is_new_activation) {
+            $log[] = __('Detected new member activation', 'lcd-people');
+            
+            // Add test group if configured
+            $new_member_group = get_option('lcd_people_sender_new_member_group');
+            if (!empty($new_member_group) && !in_array($new_member_group, $groups)) {
+                $groups[] = $new_member_group;
+                $log[] = sprintf(__('Adding new member group ID: %s', 'lcd-people'), $new_member_group);
+            }
+        } else {
+            $log[] = sprintf(
+                __('Status transition: %s → %s (not a new activation)', 'lcd-people'),
+                $previous_status ? $previous_status : 'none',
+                $new_status ? $new_status : 'none'
+            );
         }
 
         $subscriber_data = array(
@@ -949,8 +991,8 @@ class LCD_People {
             'lastname' => sanitize_text_field($lastname),
             'groups' => $groups,
             'fields' => array(
-                '{$membership_status}' => 'test',
-                '{$membership_end_date}' => date('Y-m-d'),
+                '{$membership_status}' => $new_status,
+                '{$membership_end_date}' => date('Y-m-d', strtotime('+1 year')),
                 '{$sustaining_member}' => 'true'
             )
         );
