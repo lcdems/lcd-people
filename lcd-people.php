@@ -315,6 +315,16 @@ class LCD_People {
             'normal',
             'high'
         );
+
+        // Sync Records meta box
+        add_meta_box(
+            'lcd_person_sync_records',
+            __('Sync Records', 'lcd-people'),
+            array($this, 'render_sync_records_meta_box'),
+            'lcd_person',
+            'side',
+            'default'
+        );
     }
 
     public function render_contact_meta_box($post) {
@@ -529,6 +539,221 @@ class LCD_People {
         });
         </script>
         <?php
+    }
+
+    public function render_sync_records_meta_box($post) {
+        $sync_records = get_post_meta($post->ID, '_lcd_person_sync_records', true);
+        if (!is_array($sync_records)) {
+            $sync_records = array();
+        }
+        ?>
+        <div class="sync-records-wrapper">
+            <?php if (empty($sync_records)) : ?>
+                <p><?php _e('No sync records found.', 'lcd-people'); ?></p>
+            <?php else : ?>
+                <table class="widefat fixed striped">
+                    <thead>
+                        <tr>
+                            <th><?php _e('Date', 'lcd-people'); ?></th>
+                            <th><?php _e('Service', 'lcd-people'); ?></th>
+                            <th><?php _e('Status', 'lcd-people'); ?></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php 
+                        // Sort records by timestamp, newest first
+                        usort($sync_records, function($a, $b) {
+                            return $b['timestamp'] - $a['timestamp'];
+                        });
+                        
+                        // Show last 10 records
+                        $records_to_show = array_slice($sync_records, 0, 10);
+                        
+                        foreach ($records_to_show as $record) : ?>
+                            <tr>
+                                <td><?php echo date_i18n('Y-m-d H:i:s', $record['timestamp']); ?></td>
+                                <td><?php echo esc_html($record['service']); ?></td>
+                                <td>
+                                    <?php if ($record['success']) : ?>
+                                        <span class="success">✓</span>
+                                    <?php else : ?>
+                                        <span class="error" title="<?php echo esc_attr($record['message']); ?>">✗</span>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <p class="description"><?php _e('Showing last 10 sync records', 'lcd-people'); ?></p>
+            <?php endif; ?>
+        </div>
+        <style>
+            .sync-records-wrapper .success { color: #46b450; }
+            .sync-records-wrapper .error { color: #dc3232; cursor: help; }
+            .sync-records-wrapper table { margin-top: 5px; }
+            .sync-records-wrapper td, 
+            .sync-records-wrapper th { padding: 5px; }
+        </style>
+        <?php
+    }
+
+    private function add_sync_record($person_id, $service, $success, $message = '') {
+        $sync_records = get_post_meta($person_id, '_lcd_person_sync_records', true);
+        if (!is_array($sync_records)) {
+            $sync_records = array();
+        }
+
+        // Add new record
+        $sync_records[] = array(
+            'timestamp' => current_time('timestamp'),
+            'service' => $service,
+            'success' => $success,
+            'message' => $message
+        );
+
+        // Keep only last 50 records
+        if (count($sync_records) > 50) {
+            $sync_records = array_slice($sync_records, -50);
+        }
+
+        update_post_meta($person_id, '_lcd_person_sync_records', $sync_records);
+    }
+
+    private function sync_person_to_sender($person_id) {
+        $token = get_option('lcd_people_sender_token');
+        if (empty($token)) {
+            $this->add_sync_record($person_id, 'Sender.net', false, 'No API token configured');
+            return false;
+        }
+
+        $email = get_post_meta($person_id, '_lcd_person_email', true);
+        if (empty($email)) {
+            $this->add_sync_record($person_id, 'Sender.net', false, 'No email address found');
+            return false;
+        }
+
+        // Get current and previous membership status
+        $current_status = get_post_meta($person_id, '_lcd_person_membership_status', true);
+        $previous_status = get_post_meta($person_id, '_lcd_person_previous_status', true);
+
+        // Determine if this is a new member activation
+        $is_new_activation = ($previous_status === '' || $previous_status === false) && $current_status === 'active';
+        
+        // First, try to get existing subscriber
+        $existing_subscriber = null;
+        $response = wp_remote_get('https://api.sender.net/v2/subscribers/' . urlencode($email), array(
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Accept' => 'application/json'
+            )
+        ));
+
+        if (is_wp_error($response)) {
+            $this->add_sync_record($person_id, 'Sender.net', false, 'Error checking existing subscriber: ' . $response->get_error_message());
+            return false;
+        }
+
+        $status = wp_remote_retrieve_response_code($response);
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+
+        if ($status === 200 && isset($body['data'])) {
+            $existing_subscriber = $body['data'];
+        }
+
+        // Get groups to sync
+        $groups = array();
+        
+        // If subscriber exists, preserve their existing groups
+        if ($existing_subscriber && isset($existing_subscriber['subscriber_tags'])) {
+            foreach ($existing_subscriber['subscriber_tags'] as $tag) {
+                $groups[] = $tag['id'];
+            }
+        }
+
+        // Add new member group if this is a new activation
+        if ($is_new_activation) {
+            $new_member_group = get_option('lcd_people_sender_new_member_group');
+            if (!empty($new_member_group) && !in_array($new_member_group, $groups)) {
+                $groups[] = $new_member_group;
+            }
+        }
+
+        // Get sustaining member status
+        $is_sustaining = get_post_meta($person_id, '_lcd_person_is_sustaining', true);
+
+        // Format phone number if exists
+        $phone = get_post_meta($person_id, '_lcd_person_phone', true);
+        if (!empty($phone)) {
+            // Remove any non-digit characters
+            $phone = preg_replace('/[^0-9]/', '', $phone);
+            
+            // Add +1 country code for US numbers if not already present
+            if (strlen($phone) === 10) {
+                $phone = '+1' . $phone;
+            } elseif (strlen($phone) === 11 && $phone[0] === '1') {
+                $phone = '+' . $phone;
+            }
+        }
+
+        $subscriber_data = array(
+            'email' => $email,
+            'firstname' => get_post_meta($person_id, '_lcd_person_first_name', true),
+            'lastname' => get_post_meta($person_id, '_lcd_person_last_name', true),
+            'groups' => $groups,
+            'fields' => array(
+                '{$membership_status}' => $current_status,
+                '{$membership_end_date}' => get_post_meta($person_id, '_lcd_person_end_date', true),
+                '{$sustaining_member}' => $is_sustaining ? 'true' : ''
+            ),
+            'trigger_automation' => false
+        );
+
+        // Only add phone if it's properly formatted
+        if (!empty($phone)) {
+            $subscriber_data['phone'] = $phone;
+        }
+
+        if ($existing_subscriber) {
+            $response = wp_remote_request('https://api.sender.net/v2/subscribers/' . urlencode($email), array(
+                'method' => 'PATCH',
+                'headers' => array(
+                    'Authorization' => 'Bearer ' . $token,
+                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/json'
+                ),
+                'body' => json_encode($subscriber_data)
+            ));
+        } else {
+            $response = wp_remote_post('https://api.sender.net/v2/subscribers', array(
+                'headers' => array(
+                    'Authorization' => 'Bearer ' . $token,
+                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/json'
+                ),
+                'body' => json_encode($subscriber_data)
+            ));
+        }
+
+        if (is_wp_error($response)) {
+            $this->add_sync_record($person_id, 'Sender.net', false, 'Sync failed: ' . $response->get_error_message());
+            return false;
+        }
+
+        $status = wp_remote_retrieve_response_code($response);
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+
+        if ($status === 200 || $status === 201) {
+            $this->add_sync_record($person_id, 'Sender.net', true);
+            
+            // Store the current status as previous for next time
+            update_post_meta($person_id, '_lcd_person_previous_status', $current_status);
+            
+            return true;
+        } else {
+            $message = isset($body['message']) ? $body['message'] : 'Unknown error';
+            $this->add_sync_record($person_id, 'Sender.net', false, 'Sync failed. Status: ' . $status . ', Message: ' . $message);
+            return false;
+        }
     }
 
     public function change_title_placeholder($title) {
@@ -1120,154 +1345,6 @@ class LCD_People {
         }
     }
 
-    private function sync_person_to_sender($person_id) {
-        $token = get_option('lcd_people_sender_token');
-        if (empty($token)) {
-            error_log('Sender.net sync failed: No API token configured');
-            return false;
-        }
-
-        $email = get_post_meta($person_id, '_lcd_person_email', true);
-        if (empty($email)) {
-            error_log('Sender.net sync failed: No email address for person ' . $person_id);
-            return false;
-        }
-
-        // Get current and previous membership status
-        $current_status = get_post_meta($person_id, '_lcd_person_membership_status', true);
-        $previous_status = get_post_meta($person_id, '_lcd_person_previous_status', true);
-
-        // Determine if this is a new member activation
-        $is_new_activation = ($previous_status === '' || $previous_status === false) && $current_status === 'active';
-        
-        // First, try to get existing subscriber
-        $existing_subscriber = null;
-        $response = wp_remote_get('https://api.sender.net/v2/subscribers/' . urlencode($email), array(
-            'headers' => array(
-                'Authorization' => 'Bearer ' . $token,
-                'Accept' => 'application/json'
-            )
-        ));
-
-        if (is_wp_error($response)) {
-            error_log('Sender.net sync failed: Error checking existing subscriber: ' . $response->get_error_message());
-            return false;
-        }
-
-        $status = wp_remote_retrieve_response_code($response);
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-
-        if ($status === 200 && isset($body['data'])) {
-            $existing_subscriber = $body['data'];
-            error_log('Sender.net: Found existing subscriber for ' . $email);
-        } else {
-            error_log('Sender.net: No existing subscriber found for ' . $email . '. Will create new.');
-        }
-
-        // Get groups to sync
-        $groups = array();
-        
-        // If subscriber exists, preserve their existing groups
-        if ($existing_subscriber && isset($existing_subscriber['subscriber_tags'])) {
-            foreach ($existing_subscriber['subscriber_tags'] as $tag) {
-                $groups[] = $tag['id'];
-            }
-            error_log('Sender.net: Existing groups for ' . $email . ': ' . implode(', ', $groups));
-        }
-
-        // Add new member group if this is a new activation
-        if ($is_new_activation) {
-            $new_member_group = get_option('lcd_people_sender_new_member_group');
-            if (!empty($new_member_group) && !in_array($new_member_group, $groups)) {
-                $groups[] = $new_member_group;
-                error_log('Sender.net: Adding new member group ' . $new_member_group . ' for ' . $email);
-            }
-        }
-
-        // Get sustaining member status
-        $is_sustaining = get_post_meta($person_id, '_lcd_person_is_sustaining', true);
-
-        // Format phone number if exists
-        $phone = get_post_meta($person_id, '_lcd_person_phone', true);
-        if (!empty($phone)) {
-            // Remove any non-digit characters
-            $phone = preg_replace('/[^0-9]/', '', $phone);
-            
-            // Add +1 country code for US numbers if not already present
-            if (strlen($phone) === 10) {
-                $phone = '+1' . $phone;
-            } elseif (strlen($phone) === 11 && $phone[0] === '1') {
-                $phone = '+' . $phone;
-            }
-        }
-
-        $subscriber_data = array(
-            'email' => $email,
-            'firstname' => get_post_meta($person_id, '_lcd_person_first_name', true),
-            'lastname' => get_post_meta($person_id, '_lcd_person_last_name', true),
-            'groups' => $groups,
-            'fields' => array(
-                '{$membership_status}' => $current_status,
-                '{$membership_end_date}' => get_post_meta($person_id, '_lcd_person_end_date', true),
-                '{$sustaining_member}' => $is_sustaining ? 'true' : ''
-            ),
-            'trigger_automation' => false
-        );
-
-        // Only add phone if it's properly formatted
-        if (!empty($phone)) {
-            $subscriber_data['phone'] = $phone;
-        }
-
-        error_log('Sender.net: Preparing to sync data for ' . $email . ': ' . print_r($subscriber_data, true));
-
-        if ($existing_subscriber) {
-            error_log('Sender.net: Updating existing subscriber ' . $email);
-            $response = wp_remote_request('https://api.sender.net/v2/subscribers/' . urlencode($email), array(
-                'method' => 'PATCH',
-                'headers' => array(
-                    'Authorization' => 'Bearer ' . $token,
-                    'Content-Type' => 'application/json',
-                    'Accept' => 'application/json'
-                ),
-                'body' => json_encode($subscriber_data)
-            ));
-        } else {
-            error_log('Sender.net: Creating new subscriber ' . $email);
-            $response = wp_remote_post('https://api.sender.net/v2/subscribers', array(
-                'headers' => array(
-                    'Authorization' => 'Bearer ' . $token,
-                    'Content-Type' => 'application/json',
-                    'Accept' => 'application/json'
-                ),
-                'body' => json_encode($subscriber_data)
-            ));
-        }
-
-        if (is_wp_error($response)) {
-            error_log('Sender.net sync failed for ' . $email . ': ' . $response->get_error_message());
-            return false;
-        }
-
-        $status = wp_remote_retrieve_response_code($response);
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-
-        if ($status === 200 || $status === 201) {
-            error_log('Sender.net: Successfully synced ' . $email);
-            if (isset($body['data'])) {
-                error_log('Sender.net: Subscriber ID: ' . $body['data']['id']);
-            }
-            
-            // Store the current status as previous for next time
-            update_post_meta($person_id, '_lcd_person_previous_status', $current_status);
-            
-            return true;
-        } else {
-            error_log('Sender.net sync failed for ' . $email . '. Status: ' . $status . ', Response: ' . print_r($body, true));
-            return false;
-        }
-    }
-
     public function handle_person_sync($person_id) {
         $this->sync_person_to_sender($person_id);
     }
@@ -1299,7 +1376,7 @@ class LCD_People {
         $sync_result = $this->sync_person_to_sender($post_id);
 
         if (!$sync_result) {
-            error_log('Failed to sync person ' . $post_id . ' to Sender.net after save');
+            $this->add_sync_record($post_id, 'Save Handler', false, 'Failed to sync to Sender.net after save');
         }
     }
 
@@ -1351,9 +1428,6 @@ class LCD_People {
     public function handle_actblue_webhook($request) {
         $params = $request->get_json_params();
         
-        // Log the incoming webhook data
-        error_log('ActBlue Webhook received: ' . print_r($params, true));
-
         // Check if this is a dues payment
         $dues_form = get_option('lcd_people_actblue_dues_form', 'lcdcc-dues');
         if (empty($params['contribution']['contributionForm']) || 
@@ -1383,6 +1457,7 @@ class LCD_People {
         if ($person) {
             // Update existing person
             $this->update_person_from_actblue($person->ID, $donor, $contribution, $lineitems);
+            $this->add_sync_record($person->ID, 'ActBlue', true, 'Person updated successfully');
             $response_message = 'Person updated successfully';
         } else {
             // Create new person
@@ -1390,6 +1465,7 @@ class LCD_People {
             if (is_wp_error($person_id)) {
                 return $person_id;
             }
+            $this->add_sync_record($person_id, 'ActBlue', true, 'New person created successfully');
             $response_message = 'New person created successfully';
         }
 
