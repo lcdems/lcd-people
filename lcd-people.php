@@ -119,6 +119,12 @@ class LCD_People {
                     'ajaxurl' => admin_url('admin-ajax.php'),
                     'nonce' => wp_create_nonce('lcd_people_user_search'),
                 ));
+
+                // Add unique nonce field IDs
+                add_filter('nonce_user_logged_in', function($nonce_id) {
+                    static $counter = 0;
+                    return $nonce_id . '_' . ++$counter;
+                });
             }
         }
     }
@@ -507,6 +513,13 @@ class LCD_People {
                     </div>
                 </td>
             </tr>
+            <tr>
+                <th><label for="lcd_person_payment_note"><?php _e('Payment Note', 'lcd-people'); ?></label></th>
+                <td>
+                    <textarea id="lcd_person_payment_note" name="lcd_person_payment_note" rows="3" class="widefat"><?php echo esc_textarea(get_post_meta($post->ID, '_lcd_person_payment_note', true)); ?></textarea>
+                    <p class="description"><?php _e('Add any notes about the payment here (e.g., check number, payment plan details, etc.)', 'lcd-people'); ?></p>
+                </td>
+            </tr>
         </table>
 
         <style>
@@ -843,7 +856,8 @@ class LCD_People {
             'lcd_person_membership_type',
             'lcd_person_user_id',
             'lcd_person_dues_paid_via',
-            'lcd_person_actblue_lineitem_id'
+            'lcd_person_actblue_lineitem_id',
+            'lcd_person_payment_note'
         );
 
         foreach ($fields as $field) {
@@ -1078,8 +1092,46 @@ class LCD_People {
         <div class="wrap">
             <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
             
+            <style>
+                .password-toggle-wrapper {
+                    position: relative;
+                    display: inline-block;
+                }
+                .password-toggle-wrapper .toggle-password {
+                    position: absolute;
+                    right: 10px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    cursor: pointer;
+                    color: #666;
+                    padding: 4px;
+                }
+                .password-toggle-wrapper input[type="password"],
+                .password-toggle-wrapper input[type="text"] {
+                    padding-right: 35px;
+                }
+                
+                .sender-test-log {
+                    background: #fff;
+                    border-left: 4px solid #fff;
+                    box-shadow: 0 1px 1px 0 rgba(0,0,0,.1);
+                    margin: 10px 0;
+                    padding: 1px 12px;
+                }
+                .sender-test-log p {
+                    margin: 0.5em 0;
+                    padding: 2px;
+                }
+                .sender-test-log.success {
+                    border-left-color: #00a32a;
+                }
+                .sender-test-log.error {
+                    border-left-color: #d63638;
+                }
+            </style>
+            
             <?php
-            if (isset($_POST['test_sender_connection']) && check_admin_referer('test_sender_connection')) {
+            if (isset($_POST['test_sender_connection']) && check_admin_referer('test_sender_connection', 'test_sender_nonce')) {
                 $this->test_sender_connection($_POST['test_email'], $_POST['test_firstname'], $_POST['test_lastname']);
             }
             ?>
@@ -1096,7 +1148,7 @@ class LCD_People {
 
             <h2><?php _e('Test Connection', 'lcd-people'); ?></h2>
             <form method="post" action="">
-                <?php wp_nonce_field('test_sender_connection'); ?>
+                <?php wp_nonce_field('test_sender_connection', 'test_sender_nonce'); ?>
                 <table class="form-table">
                     <tr>
                         <th><label for="test_email"><?php _e('Test Email', 'lcd-people'); ?></label></th>
@@ -1190,6 +1242,24 @@ class LCD_People {
             <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
             
             <style>
+                .password-toggle-wrapper {
+                    position: relative;
+                    display: inline-block;
+                }
+                .password-toggle-wrapper .toggle-password {
+                    position: absolute;
+                    right: 10px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    cursor: pointer;
+                    color: #666;
+                    padding: 4px;
+                }
+                .password-toggle-wrapper input[type="password"],
+                .password-toggle-wrapper input[type="text"] {
+                    padding-right: 35px;
+                }
+                
                 .sender-test-log {
                     background: #fff;
                     border-left: 4px solid #fff;
@@ -1210,7 +1280,7 @@ class LCD_People {
             </style>
 
         <?php
-            if (isset($_POST['test_sender_connection']) && check_admin_referer('test_sender_connection')) {
+            if (isset($_POST['test_sender_connection']) && check_admin_referer('test_sender_connection', 'test_sender_nonce')) {
                 $this->test_sender_connection(
                     $_POST['test_email'], 
                     $_POST['test_firstname'], 
@@ -1234,7 +1304,7 @@ class LCD_People {
 
             <h2><?php _e('Test Connection', 'lcd-people'); ?></h2>
             <form method="post" action="">
-                <?php wp_nonce_field('test_sender_connection'); ?>
+                <?php wp_nonce_field('test_sender_connection', 'test_sender_nonce'); ?>
                 <table class="form-table">
                     <tr>
                         <th><label for="test_email"><?php _e('Test Email', 'lcd-people'); ?></label></th>

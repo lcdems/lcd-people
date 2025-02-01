@@ -204,4 +204,22 @@ jQuery(document).ready(function($) {
     } else {
         container.hide();
     }
+
+    // Handle password visibility toggle
+    $('.password-toggle-wrapper').on('click', '.toggle-password', function(e) {
+        console.log("Toggling password");
+        e.preventDefault();
+        e.stopPropagation();
+        const $this = $(this);
+        const $input = $this.siblings('input');
+        
+        if ($input.attr('type') === 'password') {
+            $input.prop('type', 'text');
+        } else {
+            $input.prop('type', 'password');
+        }
+        
+        // Toggle icon class
+        $this.toggleClass('dashicons-visibility dashicons-hidden');
+    });
 }); 
