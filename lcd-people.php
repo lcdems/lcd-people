@@ -102,10 +102,15 @@ class LCD_People {
                     true
                 );
 
+                // Enqueue jQuery UI
+                wp_enqueue_style('wp-jquery-ui-dialog');
+                wp_enqueue_script('jquery-ui-dialog');
+
+                // Enqueue our admin script
                 wp_enqueue_script(
                     'lcd-people-admin',
                     plugins_url('assets/js/admin.js', __FILE__),
-                    array('jquery', 'select2'),
+                    array('jquery', 'select2', 'jquery-ui-dialog'),
                     '1.0.0',
                     true
                 );
@@ -424,7 +429,7 @@ class LCD_People {
         $membership_type = get_post_meta($post->ID, '_lcd_person_membership_type', true);
         $is_sustaining = get_post_meta($post->ID, '_lcd_person_is_sustaining', true);
         $dues_paid_via = get_post_meta($post->ID, '_lcd_person_dues_paid_via', true);
-        $actblue_lineitem_url = get_post_meta($post->ID, '_lcd_person_actblue_lineitem_url', true);
+        $actblue_lineitem_id = get_post_meta($post->ID, '_lcd_person_actblue_lineitem_id', true);
         ?>
         <table class="form-table">
             <tr>
@@ -482,62 +487,62 @@ class LCD_People {
                         <option value="transfer" <?php selected($dues_paid_via, 'transfer'); ?>><?php _e('Transfer', 'lcd-people'); ?></option>
                         <option value="in-kind" <?php selected($dues_paid_via, 'in-kind'); ?>><?php _e('In-Kind', 'lcd-people'); ?></option>
                     </select>
-                    <?php if ($dues_paid_via === 'actblue' && $actblue_lineitem_url): ?>
-                        <a href="<?php echo esc_url($actblue_lineitem_url); ?>" target="_blank" class="button button-small" style="margin-left: 10px;">
-                            <?php _e('View Payment on ActBlue', 'lcd-people'); ?>
-                            <span class="dashicons dashicons-external" style="vertical-align: middle; font-size: 16px; height: 16px; margin-left: 3px;"></span>
-                        </a>
-                    <?php endif; ?>
+                    
+                    <div id="actblue-payment-details" style="margin-top: 10px; <?php echo $dues_paid_via !== 'actblue' ? 'display: none;' : ''; ?>">
+                        <input type="hidden" id="lcd_person_actblue_lineitem_id" name="lcd_person_actblue_lineitem_id" value="<?php echo esc_attr($actblue_lineitem_id); ?>">
+                        <?php if ($actblue_lineitem_id): ?>
+                            <a href="https://secure.actblue.com/entities/155025/lineitems/<?php echo esc_attr($actblue_lineitem_id); ?>" target="_blank" class="button button-primary">
+                                <span class="dashicons dashicons-external"></span>
+                                <?php _e('View Payment on ActBlue', 'lcd-people'); ?>
+                            </a>
+                            <a href="#" class="edit-actblue-payment">
+                                <span class="dashicons dashicons-edit"></span>
+                            </a>
+                        <?php else: ?>
+                            <button type="button" class="button button-secondary add-actblue-payment">
+                                <span class="dashicons dashicons-plus-alt2"></span>
+                                <?php _e('Add ActBlue Payment', 'lcd-people'); ?>
+                            </button>
+                        <?php endif; ?>
+                    </div>
                 </td>
             </tr>
         </table>
 
-        <script>
-        jQuery(document).ready(function($) {
-            $('#lcd-cancel-membership').on('click', function(e) {
-                e.preventDefault();
-                
-                if (!confirm('<?php _e('Are you sure you want to cancel this membership? This will update several fields and cannot be undone.', 'lcd-people'); ?>')) {
-                    return;
-                }
-
-                var $button = $(this);
-                $button.prop('disabled', true);
-
-                $.ajax({
-                    url: ajaxurl,
-                    type: 'POST',
-                    data: {
-                        action: 'lcd_cancel_membership',
-                        nonce: '<?php echo wp_create_nonce('lcd_cancel_membership'); ?>',
-                        person_id: '<?php echo $post->ID; ?>'
-                    },
-                    success: function(response) {
-                        if (response.success) {
-                            // Update form fields
-                            $('#lcd_person_membership_status').val('inactive');
-                            $('#lcd_person_is_sustaining').prop('checked', false);
-                            $('#lcd_person_end_date').val(response.data.current_date);
-                            $('#lcd_person_dues_paid_via').val('');
-                            
-                            // Hide the cancel button
-                            $button.hide();
-                            
-                            // Show success message
-                            alert('<?php _e('Membership has been cancelled successfully.', 'lcd-people'); ?>');
-                        } else {
-                            alert(response.data.message || '<?php _e('Failed to cancel membership.', 'lcd-people'); ?>');
-                            $button.prop('disabled', false);
-                        }
-                    },
-                    error: function() {
-                        alert('<?php _e('Failed to cancel membership.', 'lcd-people'); ?>');
-                        $button.prop('disabled', false);
-                    }
-                });
-            });
-        });
-        </script>
+        <style>
+            .actblue-edit-dialog .ui-dialog-titlebar {
+                background: #2271b1;
+                color: #fff;
+                border: none;
+            }
+            .actblue-edit-dialog .ui-dialog-buttonpane {
+                border-top: 1px solid #dcdcde;
+                background: #f6f7f7;
+            }
+            .actblue-edit-dialog input[type="number"] {
+                width: 100%;
+                margin: 10px 0;
+            }
+            .actblue-edit-dialog .description {
+                color: #646970;
+                font-style: italic;
+            }
+            #actblue-payment-details .edit-actblue-payment {
+                text-decoration: none;
+                color: #2271b1;
+                margin-left: 10px;
+                vertical-align: middle;
+            }
+            #actblue-payment-details .edit-actblue-payment:hover {
+                color: #135e96;
+            }
+            #actblue-payment-details .dashicons {
+                width: 20px;
+                height: 20px;
+                font-size: 20px;
+                vertical-align: middle;
+            }
+        </style>
         <?php
     }
 
@@ -837,7 +842,8 @@ class LCD_People {
             'lcd_person_end_date',
             'lcd_person_membership_type',
             'lcd_person_user_id',
-            'lcd_person_dues_paid_via'
+            'lcd_person_dues_paid_via',
+            'lcd_person_actblue_lineitem_id'
         );
 
         foreach ($fields as $field) {
@@ -853,6 +859,16 @@ class LCD_People {
         // Handle the checkbox field separately since it won't be in $_POST if unchecked
         $is_sustaining = isset($_POST['lcd_person_is_sustaining']) ? '1' : '0';
         update_post_meta($post_id, '_lcd_person_is_sustaining', $is_sustaining);
+
+        // If ActBlue line item ID is set, update the line item URL
+        if (isset($_POST['lcd_person_actblue_lineitem_id']) && !empty($_POST['lcd_person_actblue_lineitem_id'])) {
+            $lineitem_id = absint($_POST['lcd_person_actblue_lineitem_id']);
+            update_post_meta($post_id, '_lcd_person_actblue_lineitem_url', 
+                sprintf('https://secure.actblue.com/entities/155025/lineitems/%d', $lineitem_id)
+            );
+        } else {
+            delete_post_meta($post_id, '_lcd_person_actblue_lineitem_url');
+        }
     }
 
     public function ajax_check_user_connection() {
@@ -962,6 +978,56 @@ class LCD_People {
      * Register settings
      */
     public function register_settings() {
+        // ActBlue settings
+        register_setting('lcd_people_actblue_settings', 'lcd_people_actblue_username', array(
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => ''
+        ));
+
+        register_setting('lcd_people_actblue_settings', 'lcd_people_actblue_password', array(
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => ''
+        ));
+
+        register_setting('lcd_people_actblue_settings', 'lcd_people_actblue_dues_form', array(
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => 'lcdcc-dues'
+        ));
+
+        add_settings_section(
+            'lcd_people_actblue_section',
+            __('ActBlue Integration Settings', 'lcd-people'),
+            array($this, 'render_actblue_settings_section'),
+            'lcd-people-actblue-settings'
+        );
+
+        add_settings_field(
+            'lcd_people_actblue_username',
+            __('Username', 'lcd-people'),
+            array($this, 'render_actblue_username_field'),
+            'lcd-people-actblue-settings',
+            'lcd_people_actblue_section'
+        );
+
+        add_settings_field(
+            'lcd_people_actblue_password',
+            __('Password', 'lcd-people'),
+            array($this, 'render_actblue_password_field'),
+            'lcd-people-actblue-settings',
+            'lcd_people_actblue_section'
+        );
+
+        add_settings_field(
+            'lcd_people_actblue_dues_form',
+            __('Dues Form Name', 'lcd-people'),
+            array($this, 'render_actblue_dues_form_field'),
+            'lcd-people-actblue-settings',
+            'lcd_people_actblue_section'
+        );
+
         // Existing ActBlue settings...
 
         // Sender.net settings
@@ -1054,6 +1120,39 @@ class LCD_People {
                 <?php submit_button(__('Test Connection', 'lcd-people'), 'secondary', 'test_sender_connection'); ?>
             </form>
         </div>
+        <?php
+    }
+
+    public function render_actblue_settings_section() {
+        ?>
+        <p><?php _e('Configure your ActBlue webhook integration settings.', 'lcd-people'); ?></p>
+        <?php
+    }
+
+    public function render_actblue_username_field() {
+        $username = get_option('lcd_people_actblue_username');
+        ?>
+        <input type="text" name="lcd_people_actblue_username" value="<?php echo esc_attr($username); ?>" class="regular-text">
+        <p class="description"><?php _e('Your ActBlue webhook authentication username', 'lcd-people'); ?></p>
+        <?php
+    }
+
+    public function render_actblue_password_field() {
+        $password = get_option('lcd_people_actblue_password');
+        ?>
+        <div class="password-toggle-wrapper">
+            <input type="password" name="lcd_people_actblue_password" value="<?php echo esc_attr($password); ?>" class="regular-text">
+            <span class="dashicons dashicons-visibility toggle-password"></span>
+        </div>
+        <p class="description"><?php _e('Your ActBlue webhook authentication password', 'lcd-people'); ?></p>
+        <?php
+    }
+
+    public function render_actblue_dues_form_field() {
+        $form = get_option('lcd_people_actblue_dues_form');
+        ?>
+        <input type="text" name="lcd_people_actblue_dues_form" value="<?php echo esc_attr($form); ?>" class="regular-text">
+        <p class="description"><?php _e('The form name for membership dues payments (e.g., lcdcc-dues)', 'lcd-people'); ?></p>
         <?php
     }
 
