@@ -1,0 +1,111 @@
+.password-toggle-wrapper {
+    position: relative;
+    display: inline-block;
+}
+
+.password-toggle-wrapper .toggle-password {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    cursor: pointer;
+    color: #666;
+    padding: 4px;
+}
+
+.password-toggle-wrapper input[type="password"],
+.password-toggle-wrapper input[type="text"] {
+    padding-right: 35px;
+}
+
+.sender-test-log {
+    background: #fff;
+    border-left: 4px solid #fff;
+    box-shadow: 0 1px 1px 0 rgba(0,0,0,.1);
+    margin: 10px 0;
+    padding: 1px 12px;
+}
+
+.sender-test-log p {
+    margin: 0.5em 0;
+    padding: 2px;
+}
+
+.sender-test-log.success {
+    border-left-color: #00a32a;
+}
+
+.sender-test-log.error {
+    border-left-color: #d63638;
+}
+
+.actblue-edit-dialog .ui-dialog-titlebar {
+    background: #2271b1;
+    color: #fff;
+    border: none;
+}
+
+.actblue-edit-dialog .ui-dialog-buttonpane {
+    border-top: 1px solid #dcdcde;
+    background: #f6f7f7;
+}
+
+.actblue-edit-dialog input[type="number"] {
+    width: 100%;
+    margin: 10px 0;
+}
+
+.actblue-edit-dialog .description {
+    color: #646970;
+    font-style: italic;
+}
+
+#actblue-payment-details .edit-actblue-payment {
+    text-decoration: none;
+    color: #2271b1;
+    margin-left: 10px;
+    vertical-align: middle;
+}
+
+#actblue-payment-details .edit-actblue-payment:hover {
+    color: #135e96;
+}
+
+#actblue-payment-details .dashicons {
+    width: 20px;
+    height: 20px;
+    font-size: 20px;
+    vertical-align: middle;
+}
+
+.lcd-user-connection {
+    margin-bottom: 10px;
+}
+
+.lcd-disconnect-user {
+    color: #a00;
+    text-decoration: none;
+    margin-left: 10px;
+}
+
+.lcd-disconnect-user:hover {
+    color: #dc3232;
+}
+
+.sync-records-wrapper .success { 
+    color: #46b450; 
+}
+
+.sync-records-wrapper .error { 
+    color: #dc3232; 
+    cursor: help; 
+}
+
+.sync-records-wrapper table { 
+    margin-top: 5px; 
+}
+
+.sync-records-wrapper td, 
+.sync-records-wrapper th { 
+    padding: 5px; 
+} 

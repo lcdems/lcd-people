@@ -83,49 +83,55 @@ class LCD_People {
     public function enqueue_admin_scripts($hook) {
         global $post;
 
-        // Only enqueue on person edit screen
-        if ($hook == 'post-new.php' || $hook == 'post.php') {
-            if (isset($post) && $post->post_type === 'lcd_person') {
-                // Enqueue Select2
-                wp_enqueue_style(
-                    'select2',
-                    'https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css',
-                    array(),
-                    '4.1.0-rc.0'
-                );
-                
-                wp_enqueue_script(
-                    'select2',
-                    'https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js',
-                    array('jquery'),
-                    '4.1.0-rc.0',
-                    true
-                );
+        // Enqueue on person edit screen AND settings pages
+        if (($hook == 'post-new.php' || $hook == 'post.php') && isset($post) && $post->post_type === 'lcd_person' ||
+            $hook == 'lcd_person_page_lcd-people-actblue-settings' ||
+            $hook == 'lcd_person_page_lcd-people-sender-settings') {
+            
+            // Enqueue jQuery UI
+            wp_enqueue_style('wp-jquery-ui-dialog');
+            wp_enqueue_script('jquery-ui-dialog');
 
-                // Enqueue jQuery UI
-                wp_enqueue_style('wp-jquery-ui-dialog');
-                wp_enqueue_script('jquery-ui-dialog');
+            // Enqueue Dashicons
+            wp_enqueue_style('dashicons');
 
-                // Enqueue our admin script
-                wp_enqueue_script(
-                    'lcd-people-admin',
-                    plugins_url('assets/js/admin.js', __FILE__),
-                    array('jquery', 'select2', 'jquery-ui-dialog'),
-                    '1.0.0',
-                    true
-                );
+            // Enqueue our admin styles
+            wp_enqueue_style(
+                'lcd-people-admin',
+                plugins_url('assets/css/admin.css', __FILE__),
+                array(),
+                '1.0.0'
+            );
 
-                wp_localize_script('lcd-people-admin', 'lcdPeople', array(
-                    'ajaxurl' => admin_url('admin-ajax.php'),
-                    'nonce' => wp_create_nonce('lcd_people_user_search'),
-                ));
+            // Enqueue Select2 for all pages (needed for settings pages too)
+            wp_enqueue_style(
+                'select2',
+                'https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css',
+                array(),
+                '4.1.0-rc.0'
+            );
+            
+            wp_enqueue_script(
+                'select2',
+                'https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js',
+                array('jquery'),
+                '4.1.0-rc.0',
+                true
+            );
 
-                // Add unique nonce field IDs
-                add_filter('nonce_user_logged_in', function($nonce_id) {
-                    static $counter = 0;
-                    return $nonce_id . '_' . ++$counter;
-                });
-            }
+            // Enqueue our admin script with select2 as dependency
+            wp_enqueue_script(
+                'lcd-people-admin',
+                plugins_url('assets/js/admin.js', __FILE__),
+                array('jquery', 'jquery-ui-dialog', 'select2'),
+                '1.0.0',
+                true
+            );
+
+            wp_localize_script('lcd-people-admin', 'lcdPeople', array(
+                'ajaxurl' => admin_url('admin-ajax.php'),
+                'nonce' => wp_create_nonce('lcd_people_user_search'),
+            ));
         }
     }
 
@@ -412,19 +418,6 @@ class LCD_People {
                 </td>
             </tr>
         </table>
-        <style>
-            .lcd-user-connection {
-                margin-bottom: 10px;
-            }
-            .lcd-disconnect-user {
-                color: #a00;
-                text-decoration: none;
-                margin-left: 10px;
-            }
-            .lcd-disconnect-user:hover {
-                color: #dc3232;
-            }
-        </style>
         <?php
     }
 
@@ -521,41 +514,6 @@ class LCD_People {
                 </td>
             </tr>
         </table>
-
-        <style>
-            .actblue-edit-dialog .ui-dialog-titlebar {
-                background: #2271b1;
-                color: #fff;
-                border: none;
-            }
-            .actblue-edit-dialog .ui-dialog-buttonpane {
-                border-top: 1px solid #dcdcde;
-                background: #f6f7f7;
-            }
-            .actblue-edit-dialog input[type="number"] {
-                width: 100%;
-                margin: 10px 0;
-            }
-            .actblue-edit-dialog .description {
-                color: #646970;
-                font-style: italic;
-            }
-            #actblue-payment-details .edit-actblue-payment {
-                text-decoration: none;
-                color: #2271b1;
-                margin-left: 10px;
-                vertical-align: middle;
-            }
-            #actblue-payment-details .edit-actblue-payment:hover {
-                color: #135e96;
-            }
-            #actblue-payment-details .dashicons {
-                width: 20px;
-                height: 20px;
-                font-size: 20px;
-                vertical-align: middle;
-            }
-        </style>
         <?php
     }
 
@@ -605,13 +563,6 @@ class LCD_People {
                 <p class="description"><?php _e('Showing last 10 sync records', 'lcd-people'); ?></p>
             <?php endif; ?>
         </div>
-        <style>
-            .sync-records-wrapper .success { color: #46b450; }
-            .sync-records-wrapper .error { color: #dc3232; cursor: help; }
-            .sync-records-wrapper table { margin-top: 5px; }
-            .sync-records-wrapper td, 
-            .sync-records-wrapper th { padding: 5px; }
-        </style>
         <?php
     }
 
@@ -1092,44 +1043,6 @@ class LCD_People {
         <div class="wrap">
             <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
             
-            <style>
-                .password-toggle-wrapper {
-                    position: relative;
-                    display: inline-block;
-                }
-                .password-toggle-wrapper .toggle-password {
-                    position: absolute;
-                    right: 10px;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    cursor: pointer;
-                    color: #666;
-                    padding: 4px;
-                }
-                .password-toggle-wrapper input[type="password"],
-                .password-toggle-wrapper input[type="text"] {
-                    padding-right: 35px;
-                }
-                
-                .sender-test-log {
-                    background: #fff;
-                    border-left: 4px solid #fff;
-                    box-shadow: 0 1px 1px 0 rgba(0,0,0,.1);
-                    margin: 10px 0;
-                    padding: 1px 12px;
-                }
-                .sender-test-log p {
-                    margin: 0.5em 0;
-                    padding: 2px;
-                }
-                .sender-test-log.success {
-                    border-left-color: #00a32a;
-                }
-                .sender-test-log.error {
-                    border-left-color: #d63638;
-                }
-            </style>
-            
             <?php
             if (isset($_POST['test_sender_connection']) && check_admin_referer('test_sender_connection', 'test_sender_nonce')) {
                 $this->test_sender_connection($_POST['test_email'], $_POST['test_firstname'], $_POST['test_lastname']);
@@ -1241,45 +1154,7 @@ class LCD_People {
         <div class="wrap">
             <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
             
-            <style>
-                .password-toggle-wrapper {
-                    position: relative;
-                    display: inline-block;
-                }
-                .password-toggle-wrapper .toggle-password {
-                    position: absolute;
-                    right: 10px;
-                    top: 50%;
-                    transform: translateY(-50%);
-                    cursor: pointer;
-                    color: #666;
-                    padding: 4px;
-                }
-                .password-toggle-wrapper input[type="password"],
-                .password-toggle-wrapper input[type="text"] {
-                    padding-right: 35px;
-                }
-                
-                .sender-test-log {
-                    background: #fff;
-                    border-left: 4px solid #fff;
-                    box-shadow: 0 1px 1px 0 rgba(0,0,0,.1);
-                    margin: 10px 0;
-                    padding: 1px 12px;
-                }
-                .sender-test-log p {
-                    margin: 0.5em 0;
-                    padding: 2px;
-                }
-                .sender-test-log.success {
-                    border-left-color: #00a32a;
-                }
-                .sender-test-log.error {
-                    border-left-color: #d63638;
-                }
-            </style>
-
-        <?php
+            <?php
             if (isset($_POST['test_sender_connection']) && check_admin_referer('test_sender_connection', 'test_sender_nonce')) {
                 $this->test_sender_connection(
                     $_POST['test_email'], 

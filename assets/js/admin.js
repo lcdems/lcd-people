@@ -1,47 +1,50 @@
 jQuery(document).ready(function($) {
-    // Initialize select2 for user search
-    $('#lcd_person_user_search').select2({
-        ajax: {
-            url: lcdPeople.ajaxurl,
-            dataType: 'json',
-            delay: 250,
-            data: function(params) {
-                return {
-                    q: params.term,
-                    action: 'lcd_search_users',
+    // Initialize Select2 if the element exists
+    const $userSearch = $('#lcd_person_user_search');
+    if ($userSearch.length && typeof $.fn.select2 === 'function') {
+        $userSearch.select2({
+            ajax: {
+                url: lcdPeople.ajaxurl,
+                dataType: 'json',
+                delay: 250,
+                data: function(params) {
+                    return {
+                        q: params.term,
+                        action: 'lcd_search_users',
+                        nonce: lcdPeople.nonce
+                    };
+                },
+                processResults: function(data) {
+                    return {
+                        results: data
+                    };
+                },
+                cache: true
+            },
+            minimumInputLength: 2,
+            placeholder: $userSearch.attr('placeholder')
+        }).on('select2:select', function(e) {
+            const userId = e.params.data.id;
+            
+            // Check for existing connection
+            $.ajax({
+                url: lcdPeople.ajaxurl,
+                data: {
+                    action: 'lcd_check_user_connection',
+                    user_id: userId,
                     nonce: lcdPeople.nonce
-                };
-            },
-            processResults: function(data) {
-                return {
-                    results: data
-                };
-            },
-            cache: true
-        },
-        minimumInputLength: 2,
-        placeholder: $(this).attr('placeholder')
-    }).on('select2:select', function(e) {
-        const userId = e.params.data.id;
-        
-        // Check for existing connection
-        $.ajax({
-            url: lcdPeople.ajaxurl,
-            data: {
-                action: 'lcd_check_user_connection',
-                user_id: userId,
-                nonce: lcdPeople.nonce
-            },
-            success: function(response) {
-                if (response.connected) {
-                    alert(response.message);
-                    $('#lcd_person_user_search').val(null).trigger('change');
-                } else {
-                    $('#lcd_person_user_id').val(userId);
+                },
+                success: function(response) {
+                    if (response.connected) {
+                        alert(response.message);
+                        $userSearch.val(null).trigger('change');
+                    } else {
+                        $('#lcd_person_user_id').val(userId);
+                    }
                 }
-            }
+            });
         });
-    });
+    }
 
     // Handle user disconnection
     $('.lcd-disconnect-user').on('click', function(e) {
@@ -205,21 +208,18 @@ jQuery(document).ready(function($) {
         container.hide();
     }
 
-    // Handle password visibility toggle
-    $('.password-toggle-wrapper').on('click', '.toggle-password', function(e) {
-        console.log("Toggling password");
+    // Handle password toggle functionality
+    $(document).on('click', '.password-toggle-wrapper .toggle-password', function(e) {
         e.preventDefault();
-        e.stopPropagation();
         const $this = $(this);
-        const $input = $this.siblings('input');
+        const $input = $this.closest('.password-toggle-wrapper').find('input');
         
         if ($input.attr('type') === 'password') {
-            $input.prop('type', 'text');
+            $input.attr('type', 'text');
+            $this.removeClass('dashicons-visibility').addClass('dashicons-hidden');
         } else {
-            $input.prop('type', 'password');
+            $input.attr('type', 'password');
+            $this.removeClass('dashicons-hidden').addClass('dashicons-visibility');
         }
-        
-        // Toggle icon class
-        $this.toggleClass('dashicons-visibility dashicons-hidden');
     });
 }); 
