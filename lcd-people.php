@@ -1611,6 +1611,7 @@ class LCD_People {
 
         // Store the ActBlue lineitem URL for reference
         if (!empty($lineitem['lineitemId'])) {
+            update_post_meta($person_id, '_lcd_person_actblue_lineitem_id', $lineitem['lineitemId']);
             update_post_meta($person_id, '_lcd_person_actblue_lineitem_url', 
                 sprintf('https://secure.actblue.com/entities/155025/lineitems/%d', $lineitem['lineitemId'])
             );
@@ -1712,6 +1713,7 @@ class LCD_People {
 
         // Store the ActBlue lineitem URL for reference
         if (!empty($lineitem['lineitemId'])) {
+            update_post_meta($person_id, '_lcd_person_actblue_lineitem_id', $lineitem['lineitemId']);
             update_post_meta($person_id, '_lcd_person_actblue_lineitem_url', 
                 sprintf('https://secure.actblue.com/entities/155025/lineitems/%d', $lineitem['lineitemId'])
             );
