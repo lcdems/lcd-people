@@ -78,6 +78,9 @@ class LCD_People {
 
         // Add cancel membership AJAX handler
         add_action('wp_ajax_lcd_cancel_membership', array($this, 'ajax_cancel_membership'));
+        
+        // Add re-trigger welcome automation AJAX handler
+        add_action('wp_ajax_lcd_retrigger_welcome', array($this, 'ajax_retrigger_welcome'));
     }
 
     public function enqueue_admin_scripts($hook) {
@@ -131,6 +134,11 @@ class LCD_People {
             wp_localize_script('lcd-people-admin', 'lcdPeople', array(
                 'ajaxurl' => admin_url('admin-ajax.php'),
                 'nonce' => wp_create_nonce('lcd_people_user_search'),
+                'strings' => array(
+                    'retriggerSuccess' => __('Welcome automation re-trigger attempted successfully.', 'lcd-people'),
+                    'retriggerError' => __('Failed to re-trigger welcome automation:', 'lcd-people'),
+                    'confirmRetrigger' => __('Are you sure you want to re-trigger the welcome automation?', 'lcd-people'),
+                )
             ));
         }
     }
@@ -455,6 +463,13 @@ class LCD_People {
                         <button type="button" class="button button-secondary" id="lcd-cancel-membership">
                             <?php _e('Cancel Membership', 'lcd-people'); ?>
                         </button>
+                        <button type="button" class="button button-secondary" id="lcd-retrigger-welcome">
+                            <?php _e('Re-trigger Welcome', 'lcd-people'); ?>
+                        </button>
+                        <div id="lcd-retrigger-welcome-dialog" title="<?php esc_attr_e('Re-trigger Welcome Automation?', 'lcd-people'); ?>" style="display: none;">
+                            <p><?php _e('This will attempt to re-trigger the welcome automation for this member.', 'lcd-people'); ?></p>
+                            <p><strong><?php _e('Note:', 'lcd-people'); ?></strong> <?php _e('The automation will only run if the member has not been through it before.', 'lcd-people'); ?></p>
+                        </div>
                     <?php endif; ?>
                 </td>
             </tr>
@@ -674,7 +689,8 @@ class LCD_People {
                 '{$membership_end_date}' => get_post_meta($person_id, '_lcd_person_end_date', true),
                 '{$sustaining_member}' => $is_sustaining ? 'true' : ''
             ),
-            'trigger_automation' => false
+            'trigger_automation' => true,
+            'trigger_groups' => true
         );
 
         // Only add phone if it's properly formatted
@@ -1841,6 +1857,103 @@ class LCD_People {
             'current_date' => $current_date,
             'message' => __('Membership cancelled successfully.', 'lcd-people')
         ));
+    }
+
+    public function ajax_retrigger_welcome() {
+        check_ajax_referer('lcd_people_user_search', 'nonce');
+
+        if (!current_user_can('edit_posts')) {
+            wp_send_json_error(array('message' => __('Permission denied.', 'lcd-people')));
+        }
+
+        $person_id = intval($_POST['person_id']);
+        if (!$person_id) {
+            wp_send_json_error(array('message' => __('Invalid person ID.', 'lcd-people')));
+        }
+
+        // Get the new member group ID
+        $new_member_group = get_option('lcd_people_sender_new_member_group');
+        if (empty($new_member_group)) {
+            wp_send_json_error(array('message' => __('New member group ID not configured.', 'lcd-people')));
+        }
+
+        // Force remove and re-add the new member group
+        $token = get_option('lcd_people_sender_token');
+        if (empty($token)) {
+            wp_send_json_error(array('message' => __('Sender.net API token not configured.', 'lcd-people')));
+        }
+
+        $email = get_post_meta($person_id, '_lcd_person_email', true);
+        if (empty($email)) {
+            wp_send_json_error(array('message' => __('No email address found for this person.', 'lcd-people')));
+        }
+
+        // First, get current subscriber data
+        $response = wp_remote_get('https://api.sender.net/v2/subscribers/' . urlencode($email), array(
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Accept' => 'application/json'
+            )
+        ));
+
+        if (is_wp_error($response)) {
+            wp_send_json_error(array('message' => __('Failed to get subscriber data:', 'lcd-people') . ' ' . $response->get_error_message()));
+        }
+
+        $status = wp_remote_retrieve_response_code($response);
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+
+        if ($status !== 200 || !isset($body['data'])) {
+            wp_send_json_error(array('message' => __('Subscriber not found in Sender.net', 'lcd-people')));
+        }
+
+        $subscriber = $body['data'];
+        $groups = array();
+        
+        // Get current groups, excluding the new member group
+        if (isset($subscriber['subscriber_tags'])) {
+            foreach ($subscriber['subscriber_tags'] as $tag) {
+                if ($tag['id'] !== $new_member_group) {
+                    $groups[] = $tag['id'];
+                }
+            }
+        }
+
+        // Add the new member group back
+        $groups[] = $new_member_group;
+
+        // Update subscriber with modified groups
+        $subscriber_data = array(
+            'groups' => $groups,
+            'trigger_automation' => true,
+            'trigger_groups' => true
+        );
+
+        $response = wp_remote_request('https://api.sender.net/v2/subscribers/' . urlencode($email), array(
+            'method' => 'PATCH',
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Content-Type' => 'application/json',
+                'Accept' => 'application/json'
+            ),
+            'body' => json_encode($subscriber_data)
+        ));
+
+        if (is_wp_error($response)) {
+            wp_send_json_error(array('message' => __('Failed to update subscriber:', 'lcd-people') . ' ' . $response->get_error_message()));
+        }
+
+        $status = wp_remote_retrieve_response_code($response);
+        
+        if ($status === 200) {
+            $this->add_sync_record($person_id, 'Sender.net', true, 'Welcome automation re-trigger attempted');
+            wp_send_json_success(array('message' => __('Welcome automation re-trigger attempted successfully.', 'lcd-people')));
+        } else {
+            $body = json_decode(wp_remote_retrieve_body($response), true);
+            $message = isset($body['message']) ? $body['message'] : __('Unknown error', 'lcd-people');
+            $this->add_sync_record($person_id, 'Sender.net', false, 'Failed to re-trigger welcome automation: ' . $message);
+            wp_send_json_error(array('message' => __('Failed to update subscriber. Status:', 'lcd-people') . ' ' . $status . ', ' . __('Message:', 'lcd-people') . ' ' . $message));
+        }
     }
 }
 

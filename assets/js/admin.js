@@ -222,4 +222,49 @@ jQuery(document).ready(function($) {
             $this.removeClass('dashicons-hidden').addClass('dashicons-visibility');
         }
     });
+
+    // Initialize the re-trigger welcome dialog
+    var $retriggerDialog = $('#lcd-retrigger-welcome-dialog').dialog({
+        autoOpen: false,
+        modal: true,
+        buttons: {
+            "Re-trigger": function() {
+                var dialog = this;
+                var $button = $('#lcd-retrigger-welcome');
+                var postId = $('#post_ID').val();
+
+                $button.prop('disabled', true);
+                
+                $.post(lcdPeople.ajaxurl, {
+                    action: 'lcd_retrigger_welcome',
+                    person_id: postId,
+                    nonce: lcdPeople.nonce
+                })
+                .done(function(response) {
+                    if (response.success) {
+                        alert(response.data.message);
+                        location.reload();
+                    } else {
+                        alert(response.data.message);
+                    }
+                })
+                .fail(function() {
+                    alert(lcdPeople.strings.retriggerError);
+                })
+                .always(function() {
+                    $button.prop('disabled', false);
+                    $(dialog).dialog('close');
+                });
+            },
+            "Cancel": function() {
+                $(this).dialog('close');
+            }
+        }
+    });
+
+    // Handle re-trigger welcome button click
+    $('#lcd-retrigger-welcome').on('click', function(e) {
+        e.preventDefault();
+        $retriggerDialog.dialog('open');
+    });
 }); 
