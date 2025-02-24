@@ -463,6 +463,7 @@ class LCD_People {
                         <option value="active" <?php selected($membership_status, 'active'); ?>><?php _e('Active', 'lcd-people'); ?></option>
                         <option value="inactive" <?php selected($membership_status, 'inactive'); ?>><?php _e('Inactive', 'lcd-people'); ?></option>
                         <option value="grace" <?php selected($membership_status, 'grace'); ?>><?php _e('Grace Period', 'lcd-people'); ?></option>
+                        <option value="expired" <?php selected($membership_status, 'expired'); ?>><?php _e('Expired', 'lcd-people'); ?></option>
                     </select>
                     <?php if ($membership_status === 'active'): ?>
                         <button type="button" class="button button-secondary" id="lcd-cancel-membership">
