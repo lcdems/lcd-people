@@ -86,6 +86,11 @@ class LCD_People {
         add_action('lcd_check_expired_memberships', array($this, 'check_expired_memberships'));
         register_activation_hook(__FILE__, array($this, 'schedule_membership_check'));
         register_deactivation_hook(__FILE__, array($this, 'clear_membership_check_schedule'));
+
+        // Remove default date filter and add custom filters
+        add_filter('disable_months_dropdown', array($this, 'disable_months_dropdown'), 10, 2);
+        add_action('restrict_manage_posts', array($this, 'add_admin_filters'));
+        add_filter('parse_query', array($this, 'handle_admin_filters'));
     }
 
     public function enqueue_admin_scripts($hook) {
@@ -2050,6 +2055,168 @@ class LCD_People {
      */
     public function clear_membership_check_schedule() {
         wp_clear_scheduled_hook('lcd_check_expired_memberships');
+    }
+
+    /**
+     * Disable the default months dropdown for our post type
+     */
+    public function disable_months_dropdown($disable, $post_type) {
+        if ($post_type === 'lcd_person') {
+            return true;
+        }
+        return $disable;
+    }
+
+    /**
+     * Add custom filter dropdowns to the admin list
+     */
+    public function add_admin_filters() {
+        global $typenow;
+        
+        if ($typenow !== 'lcd_person') {
+            return;
+        }
+
+        // Get current values from URL
+        $current_status = isset($_GET['membership_status']) ? sanitize_text_field($_GET['membership_status']) : '';
+        $current_type = isset($_GET['membership_type']) ? sanitize_text_field($_GET['membership_type']) : '';
+        $current_sustaining = isset($_GET['is_sustaining']) ? sanitize_text_field($_GET['is_sustaining']) : '';
+        $current_role = isset($_GET['lcd_role']) ? sanitize_text_field($_GET['lcd_role']) : '';
+
+        // Membership Status dropdown
+        $statuses = array(
+            '' => __('All Statuses', 'lcd-people'),
+            'active' => __('Active', 'lcd-people'),
+            'inactive' => __('Inactive', 'lcd-people'),
+            'grace' => __('Grace Period', 'lcd-people'),
+            'expired' => __('Expired', 'lcd-people')
+        );
+        echo '<select name="membership_status">';
+        foreach ($statuses as $value => $label) {
+            printf(
+                '<option value="%s" %s>%s</option>',
+                esc_attr($value),
+                selected($current_status, $value, false),
+                esc_html($label)
+            );
+        }
+        echo '</select>';
+
+        // Membership Type dropdown
+        $types = array(
+            '' => __('All Types', 'lcd-people'),
+            'paid' => __('Paid', 'lcd-people'),
+            'compulsary' => __('Compulsary', 'lcd-people'),
+            'gratis' => __('Gratis', 'lcd-people')
+        );
+        echo '<select name="membership_type">';
+        foreach ($types as $value => $label) {
+            printf(
+                '<option value="%s" %s>%s</option>',
+                esc_attr($value),
+                selected($current_type, $value, false),
+                esc_html($label)
+            );
+        }
+        echo '</select>';
+
+        // Sustaining Member dropdown
+        $sustaining_options = array(
+            '' => __('All Members', 'lcd-people'),
+            '1' => __('Sustaining Only', 'lcd-people'),
+            '0' => __('Non-Sustaining Only', 'lcd-people')
+        );
+        echo '<select name="is_sustaining">';
+        foreach ($sustaining_options as $value => $label) {
+            printf(
+                '<option value="%s" %s>%s</option>',
+                esc_attr($value),
+                selected($current_sustaining, $value, false),
+                esc_html($label)
+            );
+        }
+        echo '</select>';
+
+        // Roles dropdown
+        $roles = get_terms(array(
+            'taxonomy' => 'lcd_role',
+            'hide_empty' => false,
+        ));
+
+        if (!empty($roles) && !is_wp_error($roles)) {
+            echo '<select name="lcd_role">';
+            echo '<option value="">' . __('All Roles', 'lcd-people') . '</option>';
+            foreach ($roles as $role) {
+                printf(
+                    '<option value="%s" %s>%s</option>',
+                    esc_attr($role->slug),
+                    selected($current_role, $role->slug, false),
+                    esc_html($role->name)
+                );
+            }
+            echo '</select>';
+        }
+    }
+
+    /**
+     * Handle the custom filter logic
+     */
+    public function handle_admin_filters($query) {
+        global $pagenow;
+        
+        // Only run in admin post list
+        if (!is_admin() || $pagenow !== 'edit.php' || !isset($query->query['post_type']) || $query->query['post_type'] !== 'lcd_person') {
+            return $query;
+        }
+
+        $meta_query = array();
+
+        // Handle membership status filter
+        if (!empty($_GET['membership_status'])) {
+            $meta_query[] = array(
+                'key' => '_lcd_person_membership_status',
+                'value' => sanitize_text_field($_GET['membership_status']),
+                'compare' => '='
+            );
+        }
+
+        // Handle membership type filter
+        if (!empty($_GET['membership_type'])) {
+            $meta_query[] = array(
+                'key' => '_lcd_person_membership_type',
+                'value' => sanitize_text_field($_GET['membership_type']),
+                'compare' => '='
+            );
+        }
+
+        // Handle sustaining member filter
+        if (isset($_GET['is_sustaining']) && $_GET['is_sustaining'] !== '') {
+            $meta_query[] = array(
+                'key' => '_lcd_person_is_sustaining',
+                'value' => sanitize_text_field($_GET['is_sustaining']),
+                'compare' => '='
+            );
+        }
+
+        // Add meta query if we have any conditions
+        if (!empty($meta_query)) {
+            $meta_query['relation'] = 'AND';
+            $query->set('meta_query', $meta_query);
+        }
+
+        // Handle roles filter
+        if (!empty($_GET['lcd_role'])) {
+            $tax_query = array(
+                array(
+                    'taxonomy' => 'lcd_role',
+                    'field' => 'slug',
+                    'terms' => sanitize_text_field($_GET['lcd_role'])
+                )
+            );
+            $query->set('tax_query', $tax_query);
+        }
+
+        return $query;
     }
 }
 
