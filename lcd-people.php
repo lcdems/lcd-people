@@ -81,6 +81,11 @@ class LCD_People {
         
         // Add re-trigger welcome automation AJAX handler
         add_action('wp_ajax_lcd_retrigger_welcome', array($this, 'ajax_retrigger_welcome'));
+
+        // Check and update expired memberships
+        add_action('lcd_check_expired_memberships', array($this, 'check_expired_memberships'));
+        register_activation_hook(__FILE__, array($this, 'schedule_membership_check'));
+        register_deactivation_hook(__FILE__, array($this, 'clear_membership_check_schedule'));
     }
 
     public function enqueue_admin_scripts($hook) {
@@ -1954,6 +1959,67 @@ class LCD_People {
             $this->add_sync_record($person_id, 'Sender.net', false, 'Failed to re-trigger welcome automation: ' . $message);
             wp_send_json_error(array('message' => __('Failed to update subscriber. Status:', 'lcd-people') . ' ' . $status . ', ' . __('Message:', 'lcd-people') . ' ' . $message));
         }
+    }
+
+    /**
+     * Check and update expired memberships
+     */
+    public function check_expired_memberships() {
+        // Get all active members
+        $args = array(
+            'post_type' => 'lcd_person',
+            'posts_per_page' => -1,
+            'meta_query' => array(
+                array(
+                    'key' => '_lcd_person_membership_status',
+                    'value' => 'active',
+                    'compare' => '='
+                )
+            )
+        );
+
+        $members = get_posts($args);
+
+        foreach ($members as $member) {
+            $end_date = get_post_meta($member->ID, '_lcd_person_end_date', true);
+            
+            // Skip if no end date
+            if (empty($end_date)) {
+                continue;
+            }
+
+            // Check if membership has expired
+            $today = date('Y-m-d');
+            if ($end_date < $today) {
+                // Update membership status to expired
+                update_post_meta($member->ID, '_lcd_person_membership_status', 'expired');
+                
+                // Store previous status for sync
+                update_post_meta($member->ID, '_lcd_person_previous_status', 'active');
+                
+                // Sync to Sender.net
+                $this->sync_person_to_sender($member->ID);
+                
+                // Add sync record
+                $this->add_sync_record($member->ID, 'Membership Expiration', true, 'Membership expired and status updated');
+            }
+        }
+    }
+
+    /**
+     * Schedule the daily membership check
+     */
+    public function schedule_membership_check() {
+        if (!wp_next_scheduled('lcd_check_expired_memberships')) {
+            wp_schedule_event(strtotime('tomorrow midnight'), 'daily', 'lcd_check_expired_memberships');
+        }
+    }
+
+    /**
+     * Clear the scheduled membership check
+     */
+    public function clear_membership_check_schedule() {
+        wp_clear_scheduled_hook('lcd_check_expired_memberships');
     }
 }
 
