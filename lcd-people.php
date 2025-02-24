@@ -603,7 +603,7 @@ class LCD_People {
         update_post_meta($person_id, '_lcd_person_sync_records', $sync_records);
     }
 
-    private function sync_person_to_sender($person_id) {
+    private function sync_person_to_sender($person_id, $trigger_automation = true) {
         $token = get_option('lcd_people_sender_token');
         if (empty($token)) {
             $this->add_sync_record($person_id, 'Sender.net', false, 'No API token configured');
@@ -689,7 +689,7 @@ class LCD_People {
                 '{$membership_end_date}' => get_post_meta($person_id, '_lcd_person_end_date', true),
                 '{$sustaining_member}' => $is_sustaining ? 'true' : ''
             ),
-            'trigger_automation' => true,
+            'trigger_automation' => $trigger_automation,
             'trigger_groups' => true
         );
 
@@ -1432,8 +1432,8 @@ class LCD_People {
         // Store the previous status for next time
         update_post_meta($post_id, '_lcd_person_previous_status', $previous_status);
 
-        // Sync to Sender.net
-        $sync_result = $this->sync_person_to_sender($post_id);
+        // Sync to Sender.net - disable automation triggers for admin updates
+        $sync_result = $this->sync_person_to_sender($post_id, false);
 
         if (!$sync_result) {
             $this->add_sync_record($post_id, 'Save Handler', false, 'Failed to sync to Sender.net after save');
