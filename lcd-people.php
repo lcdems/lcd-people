@@ -626,6 +626,14 @@ class LCD_People {
         $current_status = get_post_meta($person_id, '_lcd_person_membership_status', true);
         $previous_status = get_post_meta($person_id, '_lcd_person_previous_status', true);
 
+        // Get end date and format it for display
+        $end_date = get_post_meta($person_id, '_lcd_person_end_date', true);
+        $end_date_display = $end_date ? date_i18n(get_option('date_format'), strtotime($end_date)) : '';
+        
+        // Calculate grace period end date (30 days after end date) and format it
+        $grace_period_end_date = $end_date ? date('Y-m-d', strtotime($end_date . ' +30 days')) : '';
+        $grace_period_end_date_display = $grace_period_end_date ? date_i18n(get_option('date_format'), strtotime($grace_period_end_date)) : '';
+
         // Determine if this is a new member activation
         $is_new_activation = ($previous_status === '' || $previous_status === false) && $current_status === 'active';
         
@@ -692,7 +700,9 @@ class LCD_People {
             'groups' => $groups,
             'fields' => array(
                 '{$membership_status}' => $current_status,
-                '{$membership_end_date}' => get_post_meta($person_id, '_lcd_person_end_date', true),
+                '{$membership_end_date}' => $end_date,
+                '{$membership_end_date_display}' => $end_date_display,
+                '{$grace_period_end_date_display}' => $grace_period_end_date_display,
                 '{$sustaining_member}' => $is_sustaining ? 'true' : ''
             ),
             'trigger_automation' => $trigger_automation,
@@ -705,6 +715,25 @@ class LCD_People {
         }
 
         if ($existing_subscriber) {
+            // For existing subscribers, only update the fields we want to change
+            $update_data = array(
+                'fields' => $subscriber_data['fields'],
+                'trigger_automation' => $subscriber_data['trigger_automation'],
+                'trigger_groups' => $subscriber_data['trigger_groups']
+            );
+            
+            // Only update groups if we're adding the new member group
+            if ($is_new_activation) {
+                $update_data['groups'] = $subscriber_data['groups'];
+            }
+            
+            // Include basic info updates
+            $update_data['firstname'] = $subscriber_data['firstname'];
+            $update_data['lastname'] = $subscriber_data['lastname'];
+            if (isset($subscriber_data['phone'])) {
+                $update_data['phone'] = $subscriber_data['phone'];
+            }
+
             $response = wp_remote_request('https://api.sender.net/v2/subscribers/' . urlencode($email), array(
                 'method' => 'PATCH',
                 'headers' => array(
@@ -712,7 +741,7 @@ class LCD_People {
                     'Content-Type' => 'application/json',
                     'Accept' => 'application/json'
                 ),
-                'body' => json_encode($subscriber_data)
+                'body' => json_encode($update_data)
             ));
         } else {
             $response = wp_remote_post('https://api.sender.net/v2/subscribers', array(
