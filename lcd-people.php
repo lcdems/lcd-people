@@ -2243,6 +2243,19 @@ class LCD_People {
             );
             $query->set('tax_query', $tax_query);
         }
+        
+        // Handle sorting by start_date and end_date
+        $orderby = $query->get('orderby');
+        
+        if ($orderby === 'start_date') {
+            $query->set('meta_key', '_lcd_person_membership_start_date');
+            $query->set('orderby', 'meta_value');
+            $query->set('meta_type', 'DATE');
+        } elseif ($orderby === 'end_date') {
+            $query->set('meta_key', '_lcd_person_membership_end_date');
+            $query->set('orderby', 'meta_value');
+            $query->set('meta_type', 'DATE');
+        }
 
         return $query;
     }
