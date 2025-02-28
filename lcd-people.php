@@ -2248,11 +2248,11 @@ class LCD_People {
         $orderby = $query->get('orderby');
         
         if ($orderby === 'start_date') {
-            $query->set('meta_key', '_lcd_person_membership_start_date');
+            $query->set('meta_key', '_lcd_person_start_date');
             $query->set('orderby', 'meta_value');
             $query->set('meta_type', 'DATE');
         } elseif ($orderby === 'end_date') {
-            $query->set('meta_key', '_lcd_person_membership_end_date');
+            $query->set('meta_key', '_lcd_person_end_date');
             $query->set('orderby', 'meta_value');
             $query->set('meta_type', 'DATE');
         }
