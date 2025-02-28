@@ -45,6 +45,9 @@ class LCD_People {
         // Add AJAX handler for checking duplicate connections
         add_action('wp_ajax_lcd_check_user_connection', array($this, 'ajax_check_user_connection'));
         
+        // Add AJAX handler for copying emails
+        add_action('wp_ajax_lcd_get_filtered_emails', array($this, 'ajax_get_filtered_emails'));
+        
         // Handle user deletion
         add_action('delete_user', array($this, 'handle_user_deletion'));
         
@@ -91,10 +94,14 @@ class LCD_People {
         add_filter('disable_months_dropdown', array($this, 'disable_months_dropdown'), 10, 2);
         add_action('restrict_manage_posts', array($this, 'add_admin_filters'));
         add_filter('parse_query', array($this, 'handle_admin_filters'));
+        
+        // Add the "Copy Emails" button to the admin list page
+        add_action('manage_posts_extra_tablenav', array($this, 'add_copy_emails_button'));
     }
 
     public function enqueue_admin_scripts($hook) {
         global $post;
+        global $typenow;
 
         // Enqueue on person edit screen AND settings pages
         if (($hook == 'post-new.php' || $hook == 'post.php') && isset($post) && $post->post_type === 'lcd_person' ||
@@ -148,6 +155,27 @@ class LCD_People {
                     'retriggerSuccess' => __('Welcome automation re-trigger attempted successfully.', 'lcd-people'),
                     'retriggerError' => __('Failed to re-trigger welcome automation:', 'lcd-people'),
                     'confirmRetrigger' => __('Are you sure you want to re-trigger the welcome automation?', 'lcd-people'),
+                )
+            ));
+        }
+        
+        // Enqueue on the lcd_person list page
+        if ($hook === 'edit.php' && $typenow === 'lcd_person') {
+            wp_enqueue_script(
+                'lcd-people-list-admin',
+                plugins_url('assets/js/admin-list.js', __FILE__),
+                array('jquery'),
+                '1.0.0',
+                true
+            );
+            
+            wp_localize_script('lcd-people-list-admin', 'lcdPeopleAdmin', array(
+                'ajaxurl' => admin_url('admin-ajax.php'),
+                'nonce' => wp_create_nonce('lcd_people_admin'),
+                'strings' => array(
+                    'copySuccess' => __('Emails copied to clipboard!', 'lcd-people'),
+                    'copyError' => __('Failed to copy emails:', 'lcd-people'),
+                    'noEmails' => __('No email addresses found.', 'lcd-people'),
                 )
             ));
         }
@@ -2217,6 +2245,109 @@ class LCD_People {
         }
 
         return $query;
+    }
+
+    /**
+     * AJAX handler to get all emails from the current filtered list
+     */
+    public function ajax_get_filtered_emails() {
+        check_ajax_referer('lcd_people_admin', 'nonce');
+
+        if (!current_user_can('edit_posts')) {
+            wp_die(-1);
+        }
+
+        // Get the current admin filter arguments
+        $args = array(
+            'post_type' => 'lcd_person',
+            'posts_per_page' => -1, // Get all posts
+            'fields' => 'ids', // Only get post IDs for efficiency
+        );
+
+        // Add meta query if filters are set
+        $meta_query = array();
+
+        // Handle membership status filter
+        if (!empty($_GET['membership_status'])) {
+            $meta_query[] = array(
+                'key' => '_lcd_person_membership_status',
+                'value' => sanitize_text_field($_GET['membership_status']),
+                'compare' => '='
+            );
+        }
+
+        // Handle membership type filter
+        if (!empty($_GET['membership_type'])) {
+            $meta_query[] = array(
+                'key' => '_lcd_person_membership_type',
+                'value' => sanitize_text_field($_GET['membership_type']),
+                'compare' => '='
+            );
+        }
+
+        // Handle sustaining member filter
+        if (isset($_GET['is_sustaining']) && $_GET['is_sustaining'] !== '') {
+            $meta_query[] = array(
+                'key' => '_lcd_person_is_sustaining',
+                'value' => sanitize_text_field($_GET['is_sustaining']),
+                'compare' => '='
+            );
+        }
+
+        // Apply meta query if we have conditions
+        if (!empty($meta_query)) {
+            if (count($meta_query) > 1) {
+                $meta_query['relation'] = 'AND';
+            }
+            $args['meta_query'] = $meta_query;
+        }
+
+        // Handle role filter
+        if (!empty($_GET['lcd_role'])) {
+            $args['tax_query'] = array(
+                array(
+                    'taxonomy' => 'lcd_role',
+                    'field' => 'slug',
+                    'terms' => sanitize_text_field($_GET['lcd_role'])
+                )
+            );
+        }
+
+        // Handle search
+        if (!empty($_GET['s'])) {
+            $args['s'] = sanitize_text_field($_GET['s']);
+        }
+
+        // Run the query
+        $query = new WP_Query($args);
+        $emails = array();
+
+        if ($query->have_posts()) {
+            foreach ($query->posts as $post_id) {
+                $email = get_post_meta($post_id, '_lcd_person_email', true);
+                if (!empty($email)) {
+                    $emails[] = $email;
+                }
+            }
+        }
+
+        wp_send_json_success(array(
+            'emails' => $emails,
+            'total' => count($emails)
+        ));
+    }
+
+    public function add_copy_emails_button($which) {
+        global $typenow;
+        
+        // Only add button on our custom post type and at the top of the list
+        if ($typenow !== 'lcd_person' || $which !== 'top') {
+            return;
+        }
+        
+        echo '<div class="alignleft actions">';
+        echo '<button type="button" id="lcd-copy-emails-button" class="button">' . __('Copy Emails', 'lcd-people') . '</button>';
+        echo '</div>';
     }
 }
 
