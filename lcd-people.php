@@ -704,7 +704,7 @@ class LCD_People {
         // Add new member group if this is a new activation
         if ($is_new_activation) {
             $new_member_group = get_option('lcd_people_sender_new_member_group');
-            if (!empty($new_member_group) && !in_array($new_member_group, $groups)) {
+            if (!empty($new_member_group) && !in_array($new_member_group, $groups) && $trigger_automation) {
                 $groups[] = $new_member_group;
             }
         }
