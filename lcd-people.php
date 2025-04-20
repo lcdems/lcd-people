@@ -85,6 +85,9 @@ class LCD_People {
         // Add re-trigger welcome automation AJAX handler
         add_action('wp_ajax_lcd_retrigger_welcome', array($this, 'ajax_retrigger_welcome'));
 
+        // Add switch primary member AJAX handler
+        add_action('wp_ajax_lcd_switch_primary_member', array($this, 'ajax_switch_primary_member'));
+
         // Check and update expired memberships
         add_action('lcd_check_expired_memberships', array($this, 'check_expired_memberships'));
         register_activation_hook(__FILE__, array($this, 'schedule_membership_check'));
@@ -97,6 +100,10 @@ class LCD_People {
         
         // Add the "Copy Emails" button to the admin list page
         add_action('manage_posts_extra_tablenav', array($this, 'add_copy_emails_button'));
+
+        // Add class to admin rows for duplicate primary highlighting
+        add_filter('post_class', array($this, 'add_person_row_class'), 10, 3);
+        add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_styles')); // Ensure styles are enqueued
     }
 
     public function enqueue_admin_scripts($hook) {
@@ -155,6 +162,12 @@ class LCD_People {
                     'retriggerSuccess' => __('Welcome automation re-trigger attempted successfully.', 'lcd-people'),
                     'retriggerError' => __('Failed to re-trigger welcome automation:', 'lcd-people'),
                     'confirmRetrigger' => __('Are you sure you want to re-trigger the welcome automation?', 'lcd-people'),
+                    'confirmMakePrimary' => __('Are you sure you want to make this person primary? This will demote the current primary member.', 'lcd-people'),
+                    'switchPrimarySuccess' => __('Primary member switched successfully. Reloading page...', 'lcd-people'),
+                    'switchPrimaryError' => __('Failed to switch primary member:', 'lcd-people'),
+                    'makePrimary' => __('Make this person primary', 'lcd-people'),
+                    'switchingPrimary' => __('Switching', 'lcd-people'),
+                    'ajaxRequestFailed' => __('An error occurred while processing the request.', 'lcd-people'),
                 )
             ));
         }
@@ -178,6 +191,19 @@ class LCD_People {
                     'noEmails' => __('No email addresses found.', 'lcd-people'),
                 )
             ));
+        }
+    }
+
+    // Enqueue specific styles for admin list table
+    public function enqueue_admin_styles($hook) {
+         // Enqueue on the lcd_person list page
+        if ($hook === 'edit.php' && isset($_GET['post_type']) && $_GET['post_type'] === 'lcd_person') {
+            wp_enqueue_style(
+                'lcd-people-admin-list-styles', // Use a different handle than the JS
+                plugins_url('assets/css/admin-list.css', __FILE__),
+                array(),
+                '1.0.1' // Incremented version
+            );
         }
     }
 
@@ -388,6 +414,16 @@ class LCD_People {
             'side',
             'default'
         );
+
+        // Shared Email Management meta box
+        add_meta_box(
+            'lcd_person_shared_email',
+            __('Shared Email Management', 'lcd-people'),
+            array($this, 'render_shared_email_meta_box'),
+            'lcd_person',
+            'side', // Place it on the side
+            'low'  // Place it lower down
+        );
     }
 
     public function render_contact_meta_box($post) {
@@ -475,6 +511,13 @@ class LCD_People {
         $is_sustaining = get_post_meta($post->ID, '_lcd_person_is_sustaining', true);
         $dues_paid_via = get_post_meta($post->ID, '_lcd_person_dues_paid_via', true);
         $actblue_lineitem_id = get_post_meta($post->ID, '_lcd_person_actblue_lineitem_id', true);
+        $is_primary = get_post_meta($post->ID, '_lcd_person_is_primary', true);
+        $email = get_post_meta($post->ID, '_lcd_person_email', true); // Needed for conditional display
+
+        // Default to checked if meta value is empty (for new posts) or doesn't exist yet
+        if ($is_primary === '') {
+            $is_primary = '1';
+        }
         ?>
         <table class="form-table">
             <tr>
@@ -568,6 +611,72 @@ class LCD_People {
                 </td>
             </tr>
         </table>
+        <script type="text/javascript">
+            jQuery(document).ready(function($) {
+                // Function to toggle visibility of the primary member row
+                function togglePrimaryRow() {
+                    if ($('#lcd_person_email').val()) {
+                        $('.primary-member-row').show();
+                    } else {
+                        $('.primary-member-row').hide();
+                        // Uncheck primary if email is removed
+                        $('#lcd_person_is_primary').prop('checked', false);
+                    }
+                }
+
+                // Check visibility when email field changes
+                $('#lcd_person_email').on('input change keyup', togglePrimaryRow);
+
+                // Also check visibility when contact metabox is loaded (in case email comes from user connect)
+                 // We need to check periodically as user connection might populate email async
+                var checkEmailInterval = setInterval(function() {
+                    if ($('#lcd_person_email').val()) {
+                         togglePrimaryRow();
+                         // Optionally clear interval once email is found, or keep running
+                         // clearInterval(checkEmailInterval);
+                    }
+                }, 500); // Check every 500ms
+
+                // Initial check on page load
+                togglePrimaryRow();
+
+                // Handle "Make Primary" click
+                $(document).on('click', '.lcd-make-primary', function(e) {
+                    e.preventDefault();
+                    var $link = $(this);
+                    var personId = $link.data('person-id');
+                    var currentPrimaryId = $link.data('current-primary-id');
+                    var nonce = $link.data('nonce');
+
+                    if (!confirm(lcdPeople.strings.confirmMakePrimary)) {
+                        return;
+                    }
+
+                    $link.text(lcdPeople.strings.switchingPrimary + '...');
+                    $link.css('pointer-events', 'none'); // Disable link during processing
+
+                    $.post(lcdPeople.ajaxurl, {
+                        action: 'lcd_switch_primary_member',
+                        person_id: personId,
+                        current_primary_id: currentPrimaryId,
+                        _ajax_nonce: nonce
+                    }, function(response) {
+                        if (response.success) {
+                            alert(lcdPeople.strings.switchPrimarySuccess);
+                            location.reload(); // Reload the page to see changes
+                        } else {
+                            alert(lcdPeople.strings.switchPrimaryError + ' ' + response.data.message);
+                            $link.text(lcdPeople.strings.makePrimary); // Restore link text
+                             $link.css('pointer-events', ''); // Re-enable link
+                        }
+                    }).fail(function() {
+                         alert(lcdPeople.strings.switchPrimaryError + ' ' + lcdPeople.strings.ajaxRequestFailed);
+                         $link.text(lcdPeople.strings.makePrimary); // Restore link text
+                         $link.css('pointer-events', ''); // Re-enable link
+                    });
+                });
+            });
+        </script>
         <?php
     }
 
@@ -643,6 +752,15 @@ class LCD_People {
     }
 
     private function sync_person_to_sender($person_id, $trigger_automation = true) {
+        // Check if primary member
+        $is_primary = get_post_meta($person_id, '_lcd_person_is_primary', true);
+        $email = get_post_meta($person_id, '_lcd_person_email', true); // Need email for logging
+
+        if ($is_primary !== '1') {
+            $this->add_sync_record($person_id, 'Sender.net', false, 'Sync skipped: Not the primary member for this email (' . ($email ?: 'No Email') . ').');
+            return false; // Indicate sync was skipped/failed
+        }
+        
         $token = get_option('lcd_people_sender_token');
         if (empty($token)) {
             $this->add_sync_record($person_id, 'Sender.net', false, 'No API token configured');
@@ -908,6 +1026,61 @@ class LCD_People {
         // Handle the checkbox field separately since it won't be in $_POST if unchecked
         $is_sustaining = isset($_POST['lcd_person_is_sustaining']) ? '1' : '0';
         update_post_meta($post_id, '_lcd_person_is_sustaining', $is_sustaining);
+
+        // Handle Primary Member (Automatic Assignment)
+        $email = isset($_POST['lcd_person_email']) ? sanitize_email($_POST['lcd_person_email']) : '';
+        // $submitted_is_primary = isset($_POST['lcd_person_is_primary']) ? '1' : '0'; // Removed - no longer submitted
+        $is_primary_final = '0'; // Default to not primary
+
+        if (!empty($email)) {
+            // Find if another primary person exists with this email
+            $args = array(
+                'post_type' => 'lcd_person',
+                'posts_per_page' => 1,
+                'fields' => 'ids',
+                'post__not_in' => array($post_id), // Exclude current post
+                'meta_query' => array(
+                    'relation' => 'AND',
+                    array(
+                        'key' => '_lcd_person_email',
+                        'value' => $email,
+                        'compare' => '='
+                    ),
+                    array(
+                        'key' => '_lcd_person_is_primary',
+                        'value' => '1',
+                        'compare' => '='
+                    )
+                )
+            );
+            $existing_primary_query = new WP_Query($args);
+            $existing_primary_id = $existing_primary_query->posts ? $existing_primary_query->posts[0] : false;
+
+            if ($existing_primary_id) {
+                // Another primary exists, current post *must* be secondary
+                $is_primary_final = '0';
+                // Store the ID of the actual primary for display in the meta box notice
+                update_post_meta($post_id, '_lcd_person_actual_primary_id', $existing_primary_id);
+            } else {
+                // No other primary exists for this email, this one *must* be primary
+                $is_primary_final = '1';
+                delete_post_meta($post_id, '_lcd_person_actual_primary_id');
+            }
+            /* elseif ($submitted_is_primary === '1') { // Removed
+                // No other primary exists, and user submitted this one as primary (or it defaulted)
+                $is_primary_final = '1';
+                delete_post_meta($post_id, '_lcd_person_actual_primary_id');
+            } else {
+                 // No other primary exists, but user submitted this one as *not* primary
+                 $is_primary_final = '0';
+                 delete_post_meta($post_id, '_lcd_person_actual_primary_id');
+            } */
+        } else {
+            // No email, cannot be primary
+            $is_primary_final = '0';
+            delete_post_meta($post_id, '_lcd_person_actual_primary_id');
+        }
+        update_post_meta($post_id, '_lcd_person_is_primary', $is_primary_final);
 
         // If ActBlue line item ID is set, update the line item URL
         if (isset($_POST['lcd_person_actblue_lineitem_id']) && !empty($_POST['lcd_person_actblue_lineitem_id'])) {
@@ -1494,18 +1667,19 @@ class LCD_People {
         // Store previous status before any changes
         $previous_status = get_post_meta($post_id, '_lcd_person_membership_status', true);
         
-        // Let the normal save process happen
-        $this->save_meta_box_data($post_id);
+        // Let the normal save process happen (this now includes primary check)
+        // Note: save_meta_box_data is called automatically via the 'save_post' hook action added in the constructor
+        // We don't need to call it explicitly here.
 
-        // Store the previous status for next time
+        // Update the previous status meta after potential changes in save_meta_box_data
+        $current_status = get_post_meta($post_id, '_lcd_person_membership_status', true);
         update_post_meta($post_id, '_lcd_person_previous_status', $previous_status);
 
         // Sync to Sender.net - disable automation triggers for admin updates
-        $sync_result = $this->sync_person_to_sender($post_id, false);
+        // This sync will now check for primary status internally
+        $this->sync_person_to_sender($post_id, false); 
 
-        if (!$sync_result) {
-            $this->add_sync_record($post_id, 'Save Handler', false, 'Failed to sync to Sender.net after save');
-        }
+        // Sync record logging is now handled within sync_person_to_sender
     }
 
     /**
@@ -1579,11 +1753,21 @@ class LCD_People {
         $contribution = $params['contribution'];
         $lineitems = $params['lineitems'][0]; // We'll use the first lineitem
 
-        // Try to find existing person by email
-        $person = $this->get_person_by_email($donor['email']);
+        // Try to find existing person by email AND name first
+        $person = $this->get_person_by_email($donor['email'], $donor['firstname'], $donor['lastname']);
         
+        // If no exact match on email+name, try fallback to just email?
+        // Consider implications: if Mary & Bob exist, which one does email-only match?
+        // For now, let's stick to the stricter email+name match for updating.
+        // If it doesn't match email+name, we'll create a new person.
+        /*
+        if (!$person) {
+             $person = $this->get_person_by_email($donor['email']); // Fallback attempt
+        }
+        */
+
         if ($person) {
-            // Update existing person
+            // Update existing person (found by email+name)
             $this->update_person_from_actblue($person->ID, $donor, $contribution, $lineitems);
             $this->add_sync_record($person->ID, 'ActBlue', true, 'Person updated successfully');
             $response_message = 'Person updated successfully';
@@ -1604,14 +1788,40 @@ class LCD_People {
     }
 
     /**
-     * Get person by email
+     * Get person by email (and optionally first/last name for disambiguation)
      */
-    private function get_person_by_email($email) {
+    private function get_person_by_email($email, $first_name = null, $last_name = null) {
+        if (empty($email)) {
+            return null;
+        }
+
+        $meta_query = array(
+            'relation' => 'AND',
+            array(
+                'key' => '_lcd_person_email',
+                'value' => $email,
+                'compare' => '='
+            ),
+        );
+
+        // If first and last name are provided, add them to the query
+        if (!empty($first_name) && !empty($last_name)) {
+             $meta_query[] = array(
+                'key' => '_lcd_person_first_name',
+                'value' => $first_name,
+                'compare' => '=' // Note: Case-sensitivity depends on DB collation
+            );
+             $meta_query[] = array(
+                'key' => '_lcd_person_last_name',
+                'value' => $last_name,
+                'compare' => '=' // Note: Case-sensitivity depends on DB collation
+            );
+        }
+        
         $args = array(
             'post_type' => 'lcd_person',
-            'meta_key' => '_lcd_person_email',
-            'meta_value' => $email,
-            'posts_per_page' => 1
+            'posts_per_page' => 1, // We only expect one match with email+name
+            'meta_query' => $meta_query
         );
 
         $query = new WP_Query($args);
@@ -1816,6 +2026,44 @@ class LCD_People {
             if (!empty($donor['country']) && $donor['country'] !== 'United States') $address .= "\n" . $donor['country'];
             
             update_post_meta($person_id, '_lcd_person_address', $address);
+        }
+
+        // Check and potentially update Primary Status (Automatic Assignment)
+        $email = $donor['email'];
+        // Find if *another* primary person exists with this email (shouldn't for a new person, but check anyway)
+         $args = array(
+            'post_type' => 'lcd_person',
+            'posts_per_page' => 1,
+            'fields' => 'ids',
+            'post_status' => 'publish',
+            'post__not_in' => array($person_id), // Exclude self
+            'meta_query' => array(
+                'relation' => 'AND',
+                array(
+                    'key' => '_lcd_person_email',
+                    'value' => $email,
+                    'compare' => '='
+                ),
+                array(
+                    'key' => '_lcd_person_is_primary',
+                    'value' => '1',
+                    'compare' => '='
+                )
+            )
+        );
+        $existing_primary_query = new WP_Query($args);
+        $existing_primary_id = $existing_primary_query->posts ? $existing_primary_query->posts[0] : false;
+
+        if ($existing_primary_id) {
+            // Another primary exists - this new person becomes secondary
+             update_post_meta($person_id, '_lcd_person_is_primary', '0');
+             update_post_meta($person_id, '_lcd_person_actual_primary_id', $existing_primary_id);
+             $this->add_sync_record($person_id, 'ActBlue Webhook', true, 'New person created as secondary (primary already exists).');
+        } else {
+            // No other primary - this new person becomes primary
+            update_post_meta($person_id, '_lcd_person_is_primary', '1');
+            // No need to set _lcd_person_actual_primary_id
+             $this->add_sync_record($person_id, 'ActBlue Webhook', true, 'New person created as primary.');
         }
 
         do_action('lcd_person_actblue_created', $person_id, $donor, $contribution, $lineitem);
@@ -2361,6 +2609,257 @@ class LCD_People {
         echo '<div class="alignleft actions">';
         echo '<button type="button" id="lcd-copy-emails-button" class="button">' . __('Copy Emails', 'lcd-people') . '</button>';
         echo '</div>';
+    }
+
+    /**
+     * Add CSS class to table row if this person is a duplicate primary
+     */
+    public function add_person_row_class($classes, $class, $post_id) {
+        if (get_post_type($post_id) !== 'lcd_person') {
+            return $classes;
+        }
+
+        // Check only on the admin edit screen for lcd_person post type
+        if (!is_admin() || !function_exists('get_current_screen')) {
+             return $classes;
+        }
+        $screen = get_current_screen();
+        if (!$screen || $screen->id !== 'edit-lcd_person') {
+             return $classes;
+        }
+
+        $is_primary = get_post_meta($post_id, '_lcd_person_is_primary', true);
+        $email = get_post_meta($post_id, '_lcd_person_email', true);
+
+        if ($is_primary === '1' && !empty($email)) {
+            // Check if another primary person exists with the same email
+            $args = array(
+                'post_type' => 'lcd_person',
+                'posts_per_page' => 1,
+                'fields' => 'ids',
+                'post_status' => 'publish', // Only check published posts
+                'post__not_in' => array($post_id),
+                'meta_query' => array(
+                    'relation' => 'AND',
+                    array(
+                        'key' => '_lcd_person_email',
+                        'value' => $email,
+                        'compare' => '='
+                    ),
+                    array(
+                        'key' => '_lcd_person_is_primary',
+                        'value' => '1',
+                        'compare' => '='
+                    )
+                )
+            );
+            $duplicate_query = new WP_Query($args);
+
+            if ($duplicate_query->have_posts()) {
+                $classes[] = 'lcd-duplicate-primary';
+            }
+        }
+
+        return $classes;
+    }
+
+    /**
+     * AJAX handler to switch the primary member status between two people with the same email.
+     */
+    public function ajax_switch_primary_member() {
+        $person_id_to_promote = isset($_POST['person_id']) ? intval($_POST['person_id']) : 0;
+        $current_primary_id_to_demote = isset($_POST['current_primary_id']) ? intval($_POST['current_primary_id']) : 0;
+        $nonce = isset($_POST['_ajax_nonce']) ? sanitize_text_field($_POST['_ajax_nonce']) : '';
+
+        // Security Checks
+        if (!wp_verify_nonce($nonce, 'lcd_switch_primary_' . $person_id_to_promote)) {
+            wp_send_json_error(array('message' => __('Invalid security token.', 'lcd-people')), 403);
+        }
+
+        if (!current_user_can('edit_post', $person_id_to_promote) || !current_user_can('edit_post', $current_primary_id_to_demote)) {
+            wp_send_json_error(array('message' => __('You do not have permission to edit these records.', 'lcd-people')), 403);
+        }
+
+        // Validate IDs
+        if (!$person_id_to_promote || !$current_primary_id_to_demote) {
+            wp_send_json_error(array('message' => __('Invalid person IDs provided.', 'lcd-people')), 400);
+        }
+
+        $person_to_promote = get_post($person_id_to_promote);
+        $person_to_demote = get_post($current_primary_id_to_demote);
+
+        if (!$person_to_promote || $person_to_promote->post_type !== 'lcd_person' || !$person_to_demote || $person_to_demote->post_type !== 'lcd_person') {
+            wp_send_json_error(array('message' => __('Invalid person records found.', 'lcd-people')), 400);
+        }
+
+        // Validate Emails
+        $email_promote = get_post_meta($person_id_to_promote, '_lcd_person_email', true);
+        $email_demote = get_post_meta($current_primary_id_to_demote, '_lcd_person_email', true);
+
+        if (empty($email_promote) || $email_promote !== $email_demote) {
+            wp_send_json_error(array('message' => __('Persons do not share the same email address.', 'lcd-people')), 400);
+        }
+        
+        // Validate current primary status
+        $is_demote_primary = get_post_meta($current_primary_id_to_demote, '_lcd_person_is_primary', true);
+        if ($is_demote_primary !== '1') {
+             wp_send_json_error(array('message' => __('The person to demote is not currently the primary member.', 'lcd-people')), 400);
+        }
+        $is_promote_primary = get_post_meta($person_id_to_promote, '_lcd_person_is_primary', true);
+         if ($is_promote_primary === '1') {
+             wp_send_json_error(array('message' => __('The person to promote is already the primary member.', 'lcd-people')), 400);
+        }
+
+        // Perform the switch
+        update_post_meta($current_primary_id_to_demote, '_lcd_person_is_primary', '0');
+        delete_post_meta($current_primary_id_to_demote, '_lcd_person_actual_primary_id'); // Clear any reference it might have had
+        update_post_meta($person_id_to_promote, '_lcd_person_is_primary', '1');
+        delete_post_meta($person_id_to_promote, '_lcd_person_actual_primary_id'); // This person is now primary, clear reference
+
+        // Add sync records for auditing
+        $this->add_sync_record($current_primary_id_to_demote, 'Primary Status', true, 'Demoted from primary via switch.');
+        $this->add_sync_record($person_id_to_promote, 'Primary Status', true, 'Promoted to primary via switch.');
+
+        // Note: We don't explicitly trigger Sender sync here, as just changing primary status doesn't
+        // change the *data* that would need syncing (like membership status).
+        // The correct primary person's data will sync on the next relevant event (save, status change etc.)
+
+        wp_send_json_success(array('message' => __('Primary member switched successfully.', 'lcd-people')));
+    }
+
+    /**
+     * Render the Shared Email Management meta box content.
+     */
+    public function render_shared_email_meta_box($post) {
+        $person_id = $post->ID;
+        $person_name = $post->post_title; // Get the current person's name for clarity
+        $email = get_post_meta($person_id, '_lcd_person_email', true);
+
+        echo '<p><em>' . esc_html__('Only the primary member for an email address syncs with services like Sender.net.', 'lcd-people') . '</em></p>';
+
+        if (empty($email)) {
+            echo '<p>' . esc_html__('Email address required for shared email management.', 'lcd-people') . '</p>';
+            return;
+        }
+
+        // Find other people with the same email
+        $args = array(
+            'post_type' => 'lcd_person',
+            'posts_per_page' => -1, // Get all matches
+            'post_status' => 'publish',
+            'post__not_in' => array($person_id),
+            'meta_query' => array(
+                array(
+                    'key' => '_lcd_person_email',
+                    'value' => $email,
+                    'compare' => '='
+                ),
+            ),
+            'fields' => 'ids', // Get only IDs initially
+        );
+        $linked_people_query = new WP_Query($args);
+        $linked_people_ids = $linked_people_query->posts;
+
+        if (empty($linked_people_ids)) {
+            echo '<p>' . esc_html__('No other members share this email address.', 'lcd-people') . '</p>';
+            return;
+        }
+
+        echo '<p><strong>' . esc_html__('Members sharing this email:', 'lcd-people') . '</strong></p>';
+        echo '<ul>';
+
+        $actual_primary_id = 0;
+        $duplicate_primary_ids = [];
+        
+        // Check primary status of linked people
+        foreach ($linked_people_ids as $linked_id) {
+             $linked_person = get_post($linked_id);
+             echo '<li><a href="' . esc_url(get_edit_post_link($linked_id)) . '" title="Edit ' . esc_attr($linked_person->post_title) . '">' . esc_html($linked_person->post_title) . '</a></li>';
+
+            $is_linked_primary = get_post_meta($linked_id, '_lcd_person_is_primary', true);
+            if ($is_linked_primary === '1') {
+                if ($actual_primary_id === 0) {
+                    $actual_primary_id = $linked_id; // Found the first primary among others
+                } else {
+                    $duplicate_primary_ids[] = $linked_id; // Found more than one primary among others
+                }
+            }
+        }
+        echo '</ul><hr>';
+
+        // Now determine the status message based on the current person and the findings
+        $current_person_is_primary = get_post_meta($person_id, '_lcd_person_is_primary', true) === '1';
+
+        if ($current_person_is_primary) {
+            echo '<p><strong>' . esc_html__('Status:', 'lcd-people') . '</strong> ';
+            printf(esc_html__('%s (this record) is the primary contact.', 'lcd-people'), '<strong>' . esc_html($person_name) . '</strong>');
+            echo '</p>';
+
+            // Check if there was a conflict among the *other* linked members
+            if ($actual_primary_id !== 0) {
+                 $conflict_id = $actual_primary_id; // The first one found becomes the reference for the warning
+                 $conflict_person = get_post($conflict_id);
+                 printf(
+                    '<p style="color: #d63638;"><strong>%s:</strong> %s <a href="%s">%s</a> %s</p>',
+                    __('Warning', 'lcd-people'),
+                    __('Another person,', 'lcd-people'),
+                    esc_url(get_edit_post_link($conflict_id)),
+                    esc_html($conflict_person->post_title),
+                    __('is also marked as primary! Please resolve this conflict.', 'lcd-people')
+                );
+            }
+            // Include duplicates beyond the first conflict if any
+             foreach($duplicate_primary_ids as $dup_id) {
+                 $dup_person = get_post($dup_id);
+                 printf(
+                    '<p style="color: #d63638;"><strong>%s:</strong> %s <a href="%s">%s</a> %s</p>',
+                    __('Warning', 'lcd-people'),
+                    __('And,', 'lcd-people'),
+                    esc_url(get_edit_post_link($dup_id)),
+                    esc_html($dup_person->post_title),
+                    __('is also marked as primary!', 'lcd-people')
+                );
+             }
+        } else {
+            // Current person is secondary
+            if ($actual_primary_id !== 0) {
+                // Found a primary among the others
+                $primary_person = get_post($actual_primary_id);
+                echo '<p><strong>' . esc_html__('Status:', 'lcd-people') . '</strong> ';
+                 printf(
+                    '<a href="%s">%s</a> %s', 
+                    esc_url(get_edit_post_link($actual_primary_id)), 
+                    esc_html($primary_person->post_title), 
+                    esc_html__('is the primary contact for this email.', 'lcd-people') // Clarified
+                 );
+                 echo '</p>';
+
+                // Add the "Make Primary" link - referring to the person being edited
+                printf(
+                    '<p><a href="#" class="button button-secondary lcd-make-primary" data-person-id="%d" data-current-primary-id="%d" data-nonce="%s">%s %s</a></p>',
+                    esc_attr($person_id),
+                    esc_attr($actual_primary_id),
+                    wp_create_nonce('lcd_switch_primary_' . $person_id),
+                    esc_html__('Make', 'lcd-people'),
+                    '<strong>' . esc_html($person_name) . '</strong> ' . esc_html__('Primary', 'lcd-people')
+                );
+                 // Also warn if there were duplicates found *among the others*
+                 foreach($duplicate_primary_ids as $dup_id) {
+                     $dup_person = get_post($dup_id);
+                     printf(
+                        '<p style="color: #d63638;"><strong>%s:</strong> %s <a href="%s">%s</a> %s</p>',
+                        __('Warning', 'lcd-people'),
+                        __('Conflict:', 'lcd-people'),
+                        esc_url(get_edit_post_link($dup_id)),
+                        esc_html($dup_person->post_title),
+                        __('is also marked as primary!', 'lcd-people')
+                    );
+                 }
+            } else {
+                 // This person is secondary, AND no primary was found among others either!
+                echo '<p style="color: #d63638;"><strong>' . esc_html__('Warning:', 'lcd-people') . '</strong> ' . esc_html__('No primary member is set for this email address among the linked members. Please save one of the members to automatically assign primary status.', 'lcd-people') . '</p>';
+            }
+        }
     }
 }
 

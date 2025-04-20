@@ -109,3 +109,19 @@
 .sync-records-wrapper th { 
     padding: 5px; 
 } 
+/* LCD People Admin List Styles */
+
+tr.lcd-duplicate-primary {
+    background-color: #f8d7da !important; /* Light red */
+    border-left: 4px solid #dc3545 !important; /* Darker red border */
+}
+
+tr.lcd-duplicate-primary:hover {
+    background-color: #f1c6cb !important; /* Slightly darker red on hover */
+}
+
+/* Style for cells within the highlighted row if needed */
+tr.lcd-duplicate-primary td,
+tr.lcd-duplicate-primary th {
+    /* Optional: Add specific styles for cells */
+} 
