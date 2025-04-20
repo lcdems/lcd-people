@@ -88,6 +88,9 @@ class LCD_People {
         // Add switch primary member AJAX handler
         add_action('wp_ajax_lcd_switch_primary_member', array($this, 'ajax_switch_primary_member'));
 
+        // Add Sync All to Sender AJAX handler
+        add_action('wp_ajax_lcd_sync_all_to_sender', array($this, 'ajax_sync_all_to_sender'));
+
         // Check and update expired memberships
         add_action('lcd_check_expired_memberships', array($this, 'check_expired_memberships'));
         register_activation_hook(__FILE__, array($this, 'schedule_membership_check'));
@@ -184,11 +187,16 @@ class LCD_People {
             
             wp_localize_script('lcd-people-list-admin', 'lcdPeopleAdmin', array(
                 'ajaxurl' => admin_url('admin-ajax.php'),
-                'nonce' => wp_create_nonce('lcd_people_admin'),
+                'nonce' => wp_create_nonce('lcd_people_admin'), // Nonce for admin list actions
                 'strings' => array(
                     'copySuccess' => __('Emails copied to clipboard!', 'lcd-people'),
                     'copyError' => __('Failed to copy emails:', 'lcd-people'),
-                    'noEmails' => __('No email addresses found.', 'lcd-people'),
+                    'noEmails' => __('No email addresses found for the current filters.', 'lcd-people'),
+                    'confirmSyncAll' => __('Are you sure you want to attempt syncing ALL people to Sender.net? This may take a while and will only sync primary members with email addresses.', 'lcd-people'),
+                    'syncingAll' => __('Syncing all people... please wait.', 'lcd-people'),
+                    'syncAllError' => __('An error occurred during the sync process:', 'lcd-people'),
+                    'syncErrors' => __('Sync Errors:', 'lcd-people'),
+                    'ajaxRequestFailed' => __('AJAX request failed.', 'lcd-people'),
                 )
             ));
         }
@@ -2598,16 +2606,31 @@ class LCD_People {
         ));
     }
 
+    /**
+     * Add custom buttons to the admin list table navigation area.
+     */
     public function add_copy_emails_button($which) {
         global $typenow;
         
-        // Only add button on our custom post type and at the top of the list
+        // Only add buttons on our custom post type and at the top of the list
         if ($typenow !== 'lcd_person' || $which !== 'top') {
             return;
         }
         
-        echo '<div class="alignleft actions">';
-        echo '<button type="button" id="lcd-copy-emails-button" class="button">' . __('Copy Emails', 'lcd-people') . '</button>';
+        echo '<div class="alignleft actions lcd-people-actions">'; // Added a class for easier selection
+        
+        // Copy Emails Button
+        echo '<button type="button" id="lcd-copy-emails-button" class="button">' . esc_html__('Copy Emails', 'lcd-people') . '</button>';
+        
+        // Sync All to Sender Button
+        if (current_user_can('manage_options')) { // Only show sync button to admins
+            echo '<button type="button" id="lcd-sync-all-sender-button" class="button button-secondary">' 
+                 . '<span class="dashicons dashicons-update" style="margin-top: 4px;"></span> '
+                 . esc_html__('Sync All to Sender.net', 'lcd-people') 
+                 . '</button>';
+             echo '<span class="spinner" style="float: none; vertical-align: middle; margin-left: 5px;"></span>'; // Add a spinner
+        }
+
         echo '</div>';
     }
 
@@ -2725,6 +2748,106 @@ class LCD_People {
         // The correct primary person's data will sync on the next relevant event (save, status change etc.)
 
         wp_send_json_success(array('message' => __('Primary member switched successfully.', 'lcd-people')));
+    }
+
+    /**
+     * AJAX handler to sync all people to Sender.net
+     */
+    public function ajax_sync_all_to_sender() {
+        // Security Checks
+        check_ajax_referer('lcd_people_admin', 'nonce'); // Use the existing admin nonce
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => __('Permission denied.', 'lcd-people')), 403);
+        }
+
+        // Query all published people
+        $args = array(
+            'post_type' => 'lcd_person',
+            'posts_per_page' => -1,
+            'post_status' => 'publish',
+            'fields' => 'ids', // Only need IDs
+        );
+        $all_people_query = new WP_Query($args);
+        $all_people_ids = $all_people_query->posts;
+
+        $results = array(
+            'total_found' => count($all_people_ids),
+            'attempted' => 0,
+            'synced' => 0,
+            'skipped_non_primary' => 0,
+            'skipped_no_email' => 0,
+            'failed' => 0,
+            'error_messages' => []
+        );
+
+        if (empty($all_people_ids)) {
+            wp_send_json_success(array(
+                 'message' => __('No people found to sync.', 'lcd-people'),
+                 'results' => $results
+            ));
+        }
+
+        foreach ($all_people_ids as $person_id) {
+            $email = get_post_meta($person_id, '_lcd_person_email', true);
+            if (empty($email)) {
+                $results['skipped_no_email']++;
+                continue; // Skip if no email
+            }
+
+            $is_primary = get_post_meta($person_id, '_lcd_person_is_primary', true);
+            if ($is_primary !== '1') {
+                $results['skipped_non_primary']++;
+                continue; // Skip if not primary
+            }
+
+            // If primary and has email, attempt sync
+            $results['attempted']++;
+            
+            // Temporarily override the add_sync_record within sync_person_to_sender
+            // to capture failures specifically for this bulk operation.
+            // This is a bit tricky. Let's try directly calling the sync logic parts.
+            // OR, more simply, call sync_person_to_sender and check its return.
+            
+            // Call the sync function (trigger_automation = false)
+            $sync_success = $this->sync_person_to_sender($person_id, false); 
+            
+            if ($sync_success) {
+                 $results['synced']++;
+            } else {
+                 $results['failed']++;
+                 // Try to grab the last error message for this person from sync_records if possible
+                 $sync_records = get_post_meta($person_id, '_lcd_person_sync_records', true);
+                 if (!empty($sync_records) && is_array($sync_records)) {
+                     $last_record = end($sync_records);
+                     if (isset($last_record['service']) && $last_record['service'] === 'Sender.net' && !$last_record['success']) {
+                         $results['error_messages'][$person_id] = get_the_title($person_id) . ': ' . $last_record['message'];
+                     }
+                 }
+            }
+            
+            // Small sleep to avoid overwhelming the API? Optional.
+             // usleep(100000); // 100ms
+        }
+
+        $message = sprintf(
+            __('Sync complete. Total People: %d. Attempted Sync (Primary with Email): %d. Synced Successfully: %d. Skipped (Non-Primary): %d. Skipped (No Email): %d. Failed: %d.', 'lcd-people'),
+            $results['total_found'],
+            $results['attempted'],
+            $results['synced'],
+            $results['skipped_non_primary'],
+            $results['skipped_no_email'],
+            $results['failed']
+        );
+
+        if ($results['failed'] > 0) {
+            $message .= ' ' . __('See details below or check sync records on individual person pages.', 'lcd-people');
+        }
+
+        wp_send_json_success(array(
+            'message' => $message,
+            'results' => $results
+        ));
     }
 
     /**

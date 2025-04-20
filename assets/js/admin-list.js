@@ -3,113 +3,86 @@
  * Handles the "Copy Emails" button functionality
  */
 jQuery(document).ready(function($) {
-    // Handle the Copy Emails button click
-    $('#lcd-copy-emails-button').on('click', function(e) {
-        e.preventDefault();
-        
-        // Get button and change its text to show loading state
-        const $button = $(this);
-        const originalText = $button.text();
-        $button.text('Loading...').prop('disabled', true);
-        
-        // Get the current URL params to pass along for filters
-        const urlParams = new URLSearchParams(window.location.search);
-        
-        // Make AJAX request to get all emails
-        $.ajax({
-            url: lcdPeopleAdmin.ajaxurl,
-            type: 'GET',
-            data: {
-                action: 'lcd_get_filtered_emails',
-                nonce: lcdPeopleAdmin.nonce,
-                s: urlParams.get('s') || '',
-                membership_status: urlParams.get('membership_status') || '',
-                membership_type: urlParams.get('membership_type') || '',
-                is_sustaining: urlParams.get('is_sustaining') || '',
-                lcd_role: urlParams.get('lcd_role') || ''
-            },
-            success: function(response) {
-                if (response.success && response.data.emails.length > 0) {
-                    // Create a comma-separated list of emails
-                    const emailList = response.data.emails.join(', ');
-                    
-                    // Copy to clipboard
-                    copyToClipboard(emailList, function(success) {
-                        if (success) {
-                            // Show success message
-                            $button.text(lcdPeopleAdmin.strings.copySuccess + ' (' + response.data.total + ')');
-                            setTimeout(function() {
-                                $button.text(originalText).prop('disabled', false);
-                            }, 3000);
-                        } else {
-                            // Show error message
-                            $button.text(lcdPeopleAdmin.strings.copyError);
-                            console.error('Failed to copy to clipboard');
-                            setTimeout(function() {
-                                $button.text(originalText).prop('disabled', false);
-                            }, 3000);
-                        }
-                    });
-                } else {
-                    // Show no emails message
-                    $button.text(lcdPeopleAdmin.strings.noEmails);
-                    setTimeout(function() {
-                        $button.text(originalText).prop('disabled', false);
-                    }, 3000);
-                }
-            },
-            error: function(xhr, status, error) {
-                console.error('AJAX Error:', error);
-                $button.text(lcdPeopleAdmin.strings.copyError);
-                setTimeout(function() {
-                    $button.text(originalText).prop('disabled', false);
-                }, 3000);
+    // Copy Emails Button Functionality
+    $('#lcd-copy-emails-button').on('click', function() {
+        var $button = $(this);
+        $button.prop('disabled', true).text('Copying...'); // Disable button and change text
+
+        // Construct the data object from current filters
+        var data = {
+            action: 'lcd_get_filtered_emails',
+            _ajax_nonce: lcdPeopleAdmin.nonce, // Use the localized nonce
+            membership_status: $('select[name="membership_status"]').val(),
+            membership_type: $('select[name="membership_type"]').val(),
+            is_sustaining: $('select[name="is_sustaining"]').val(),
+            lcd_role: $('select[name="lcd_role"]').val(),
+            s: $('#post-search-input').val() // Include search term
+        };
+
+        $.get(lcdPeopleAdmin.ajaxurl, data, function(response) {
+            if (response.success && response.data.emails && response.data.emails.length > 0) {
+                var emailsString = response.data.emails.join('\n'); 
+                navigator.clipboard.writeText(emailsString).then(function() {
+                    alert(lcdPeopleAdmin.strings.copySuccess + ' (' + response.data.total + ' emails)');
+                }, function(err) {
+                    alert(lcdPeopleAdmin.strings.copyError + ' ' + err);
+                });
+            } else if (response.success) {
+                 alert(lcdPeopleAdmin.strings.noEmails);
+            } else {
+                alert(lcdPeopleAdmin.strings.copyError + ' ' + (response.data && response.data.message ? response.data.message : 'Unknown error'));
             }
+            $button.prop('disabled', false).text('Copy Emails'); // Re-enable button
+        }).fail(function() {
+            alert(lcdPeopleAdmin.strings.copyError + ' AJAX request failed.');
+            $button.prop('disabled', false).text('Copy Emails'); // Re-enable button
         });
     });
-    
-    /**
-     * Helper function to copy text to clipboard
-     */
-    function copyToClipboard(text, callback) {
-        // Modern approach using the Clipboard API
-        if (navigator.clipboard && window.isSecureContext) {
-            navigator.clipboard.writeText(text)
-                .then(() => callback(true))
-                .catch(() => {
-                    // Fallback for older browsers
-                    fallbackCopyToClipboard(text, callback);
-                });
-        } else {
-            // Fallback for older browsers or non-secure contexts
-            fallbackCopyToClipboard(text, callback);
+
+    // Sync All to Sender Button Functionality
+    $('#lcd-sync-all-sender-button').on('click', function() {
+        var $button = $(this);
+        var $spinner = $button.siblings('.spinner');
+        var $resultDiv = $('#lcd-sync-results'); // Div to display results
+
+        // Create result div if it doesn't exist
+        if ($resultDiv.length === 0) {
+            $resultDiv = $('<div id="lcd-sync-results" style="margin-top: 10px; padding: 10px; border: 1px solid #ccc; background: #f9f9f9; display: none;"></div>');
+            $('.lcd-people-actions').after($resultDiv); // Place it after the buttons container
         }
-    }
-    
-    /**
-     * Fallback method to copy to clipboard using a temporary textarea
-     */
-    function fallbackCopyToClipboard(text, callback) {
-        try {
-            // Create a temporary textarea element
-            const textarea = document.createElement('textarea');
-            textarea.value = text;
-            
-            // Set the CSS to make it invisible
-            textarea.style.position = 'fixed';
-            textarea.style.opacity = '0';
-            
-            document.body.appendChild(textarea);
-            textarea.select();
-            
-            // Execute the copy command
-            const success = document.execCommand('copy');
-            document.body.removeChild(textarea);
-            
-            callback(success);
-        } catch (err) {
-            console.error('Fallback copy to clipboard failed:', err);
-            callback(false);
+        $resultDiv.hide().empty(); // Clear previous results
+
+        if (!confirm(lcdPeopleAdmin.strings.confirmSyncAll)) {
+            return;
         }
-    }
+
+        $button.prop('disabled', true);
+        $spinner.addClass('is-active');
+        $resultDiv.html('<p>' + lcdPeopleAdmin.strings.syncingAll + '</p>').show();
+
+        $.post(lcdPeopleAdmin.ajaxurl, {
+            action: 'lcd_sync_all_to_sender',
+            nonce: lcdPeopleAdmin.nonce // Pass nonce correctly
+        }, function(response) {
+            if (response.success) {
+                var resultHtml = '<p><strong>' + response.data.message + '</strong></p>';
+                // Add error details if any
+                if (response.data.results && response.data.results.failed > 0 && response.data.results.error_messages) {
+                    resultHtml += '<h5>' + lcdPeopleAdmin.strings.syncErrors + '</h5><ul>';
+                    $.each(response.data.results.error_messages, function(id, msg) {
+                        resultHtml += '<li>' + msg + '</li>';
+                    });
+                     resultHtml += '</ul>';
+                }
+                 $resultDiv.html(resultHtml);
+            } else {
+                $resultDiv.html('<p style="color: red;"><strong>' + lcdPeopleAdmin.strings.syncAllError + '</strong> ' + (response.data && response.data.message ? response.data.message : '') + '</p>');
+            }
+        }).fail(function() {
+            $resultDiv.html('<p style="color: red;"><strong>' + lcdPeopleAdmin.strings.syncAllError + '</strong> ' + lcdPeopleAdmin.strings.ajaxRequestFailed + '</p>');
+        }).always(function() {
+            $button.prop('disabled', false);
+            $spinner.removeClass('is-active');
+        });
+    });
 }); 
