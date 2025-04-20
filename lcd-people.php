@@ -193,7 +193,7 @@ class LCD_People {
                     'copyError' => __('Failed to copy emails:', 'lcd-people'),
                     'noEmails' => __('No email addresses found for the current filters.', 'lcd-people'),
                     'confirmSyncAll' => __('Are you sure you want to attempt syncing ALL people to Sender.net? This may take a while and will only sync primary members with email addresses.', 'lcd-people'),
-                    'syncingAll' => __('Syncing all people... please wait.', 'lcd-people'),
+                    'syncingAll' => __('Syncing all people... (including backfill primary check)... please wait.', 'lcd-people'), // Updated processing text
                     'syncAllError' => __('An error occurred during the sync process:', 'lcd-people'),
                     'syncErrors' => __('Sync Errors:', 'lcd-people'),
                     'ajaxRequestFailed' => __('AJAX request failed.', 'lcd-people'),
@@ -2781,11 +2781,44 @@ class LCD_People {
             'error_messages' => []
         );
 
+        $results['backfilled_primary'] = 0;
+
         if (empty($all_people_ids)) {
             wp_send_json_success(array(
                  'message' => __('No people found to sync.', 'lcd-people'),
                  'results' => $results
             ));
+        }
+
+        // Group by email
+        $email_groups = [];
+        $email_counts = [];
+        foreach ($all_people_ids as $person_id) {
+            $email = get_post_meta($person_id, '_lcd_person_email', true);
+            if (!empty($email)) {
+                $email = strtolower(trim($email)); // Normalize email
+                if (!isset($email_groups[$email])) {
+                    $email_groups[$email] = [];
+                    $email_counts[$email] = 0;
+                }
+                $email_groups[$email][] = $person_id;
+                $email_counts[$email]++;
+            }
+        }
+
+        // Backfill primary status for single-email users
+        foreach ($email_counts as $email => $count) {
+            if ($count === 1) {
+                $person_id = $email_groups[$email][0]; // Get the single ID for this email
+                $is_primary = get_post_meta($person_id, '_lcd_person_is_primary', true);
+                if ($is_primary !== '1') {
+                    // This person has a unique email but isn't primary - fix it.
+                    update_post_meta($person_id, '_lcd_person_is_primary', '1');
+                    delete_post_meta($person_id, '_lcd_person_actual_primary_id'); // Clean up just in case
+                    $results['backfilled_primary']++;
+                }
+            }
+            // If count > 1, the existing save/switch logic handles primary status.
         }
 
         foreach ($all_people_ids as $person_id) {
@@ -2831,8 +2864,9 @@ class LCD_People {
         }
 
         $message = sprintf(
-            __('Sync complete. Total People: %d. Attempted Sync (Primary with Email): %d. Synced Successfully: %d. Skipped (Non-Primary): %d. Skipped (No Email): %d. Failed: %d.', 'lcd-people'),
+            __('Sync complete. Total People: %d. Backfilled Primary Status: %d. Attempted Sync (Primary with Email): %d. Synced Successfully: %d. Skipped (Non-Primary): %d. Skipped (No Email): %d. Failed: %d.', 'lcd-people'),
             $results['total_found'],
+            $results['backfilled_primary'],
             $results['attempted'],
             $results['synced'],
             $results['skipped_non_primary'],
