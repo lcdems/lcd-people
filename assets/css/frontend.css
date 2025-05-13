@@ -1,0 +1,138 @@
+/**
+ * LCD People Frontend Styles
+ */
+
+/* Member Profile Container */
+.lcd-member-profile-container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.lcd-member-profile {
+    background-color: white;
+    border-radius: var(--border-radius, 4px);
+    box-shadow: var(--box-shadow, 0 2px 5px rgba(0, 0, 0, 0.1));
+    padding: var(--spacing-md, 2rem);
+    margin-bottom: var(--spacing-md, 2rem);
+}
+
+.lcd-member-profile h2 {
+    margin-top: 0;
+    font-size: var(--font-size-2xl, 1.5rem);
+    color: var(--color-secondary, #002B50);
+    border-bottom: 1px solid var(--color-border, #E5E5E5);
+    padding-bottom: var(--spacing-xs, 0.5rem);
+    margin-bottom: var(--spacing-md, 2rem);
+}
+
+/* Member Profile Sections */
+.lcd-member-profile-section {
+    margin-bottom: var(--spacing-md, 2rem);
+}
+
+.lcd-member-profile-section h3 {
+    font-size: var(--font-size-xl, 1.25rem);
+    color: var(--color-secondary, #002B50);
+    margin-bottom: var(--spacing-sm, 1rem);
+}
+
+.lcd-member-profile-section p {
+    margin: var(--spacing-xs, 0.5rem) 0;
+    line-height: var(--line-height-normal, 1.5);
+}
+
+.lcd-member-profile-section strong {
+    font-weight: 600;
+    margin-right: var(--spacing, 0.5rem);
+}
+
+/* Membership Status Badges */
+.lcd-membership-badge {
+    display: inline-block;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: var(--font-size-sm, 0.875rem);
+    font-weight: 600;
+    margin-right: var(--spacing-xs, 0.5rem);
+    margin-bottom: var(--spacing-xs, 0.5rem);
+}
+
+.lcd-membership-badge.active {
+    background-color: #4CAF50;
+    color: white;
+}
+
+.lcd-membership-badge.grace {
+    background-color: var(--color-accent, #ee8f13);
+    color: white;
+}
+
+.lcd-membership-badge.expired {
+    background-color: #f44336;
+    color: white;
+}
+
+.lcd-membership-badge.inactive {
+    background-color: #9E9E9E;
+    color: white;
+}
+
+.lcd-membership-badge.none {
+    background-color: #E0E0E0;
+    color: #757575;
+}
+
+.lcd-membership-badge.sustaining {
+    background-color: var(--color-primary, #2a5fb4);
+    color: white;
+}
+
+/* Membership Dates */
+.lcd-membership-dates {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-md, 2rem);
+}
+
+.lcd-membership-start,
+.lcd-membership-end {
+    display: inline-block;
+}
+
+/* Login Required Message */
+.lcd-member-login-required,
+.lcd-member-no-record {
+    background-color: #f8f9fa;
+    border-left: 4px solid var(--color-primary, #2a5fb4);
+    padding: var(--spacing-sm, 1rem) var(--spacing-md, 2rem);
+    margin-bottom: var(--spacing-md, 2rem);
+    font-size: var(--font-size-base, 1rem);
+    line-height: var(--line-height-normal, 1.5);
+}
+
+.lcd-member-login-required a {
+    color: var(--color-primary, #2a5fb4);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.lcd-member-login-required a:hover {
+    text-decoration: underline;
+}
+
+.lcd-member-no-record {
+    border-left-color: var(--color-accent, #ee8f13);
+}
+
+/* Responsive Styles */
+@media (max-width: 600px) {
+    .lcd-member-profile {
+        padding: var(--spacing-sm, 1rem);
+    }
+    
+    .lcd-membership-dates {
+        flex-direction: column;
+        gap: var(--spacing-xs, 0.5rem);
+    }
+} 

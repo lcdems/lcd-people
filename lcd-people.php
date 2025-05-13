@@ -13,6 +13,9 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+// Include required files
+require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-frontend.php';
+
 class LCD_People {
     private static $instance = null;
     const USER_META_KEY = '_lcd_person_id';
@@ -90,11 +93,6 @@ class LCD_People {
 
         // Add Sync All to Sender AJAX handler
         add_action('wp_ajax_lcd_sync_all_to_sender', array($this, 'ajax_sync_all_to_sender'));
-
-        // Check and update expired memberships
-        add_action('lcd_check_expired_memberships', array($this, 'check_expired_memberships'));
-        register_activation_hook(__FILE__, array($this, 'schedule_membership_check'));
-        register_deactivation_hook(__FILE__, array($this, 'clear_membership_check_schedule'));
 
         // Remove default date filter and add custom filters
         add_filter('disable_months_dropdown', array($this, 'disable_months_dropdown'), 10, 2);
@@ -304,14 +302,14 @@ class LCD_People {
 
         $args = array(
             'labels'              => $labels,
-            'public'              => true,
-            'publicly_queryable'  => true,
+            'public'              => false,
+            'publicly_queryable'  => false,
             'show_ui'             => true,
             'show_in_menu'       => true,
             'query_var'          => true,
             'rewrite'            => array('slug' => 'people'),
             'capability_type'    => 'post',
-            'has_archive'        => true,
+            'has_archive'        => false,
             'hierarchical'       => false,
             'menu_position'      => null,
             'supports'           => array('thumbnail'),
@@ -1074,15 +1072,7 @@ class LCD_People {
                 $is_primary_final = '1';
                 delete_post_meta($post_id, '_lcd_person_actual_primary_id');
             }
-            /* elseif ($submitted_is_primary === '1') { // Removed
-                // No other primary exists, and user submitted this one as primary (or it defaulted)
-                $is_primary_final = '1';
-                delete_post_meta($post_id, '_lcd_person_actual_primary_id');
-            } else {
-                 // No other primary exists, but user submitted this one as *not* primary
-                 $is_primary_final = '0';
-                 delete_post_meta($post_id, '_lcd_person_actual_primary_id');
-            } */
+           
         } else {
             // No email, cannot be primary
             $is_primary_final = '0';
@@ -1675,7 +1665,7 @@ class LCD_People {
         // Store previous status before any changes
         $previous_status = get_post_meta($post_id, '_lcd_person_membership_status', true);
         
-        // Let the normal save process happen (this now includes primary check)
+        // Let the normal save process happen
         // Note: save_meta_box_data is called automatically via the 'save_post' hook action added in the constructor
         // We don't need to call it explicitly here.
 
@@ -1684,10 +1674,10 @@ class LCD_People {
         update_post_meta($post_id, '_lcd_person_previous_status', $previous_status);
 
         // Sync to Sender.net - disable automation triggers for admin updates
-        // This sync will now check for primary status internally
+        // This sync will check for primary status internally
         $this->sync_person_to_sender($post_id, false); 
 
-        // Sync record logging is now handled within sync_person_to_sender
+        // Sync record logging is handled within sync_person_to_sender
     }
 
     /**
@@ -1764,15 +1754,28 @@ class LCD_People {
         // Try to find existing person by email AND name first
         $person = $this->get_person_by_email($donor['email'], $donor['firstname'], $donor['lastname']);
         
-        // If no exact match on email+name, try fallback to just email?
-        // Consider implications: if Mary & Bob exist, which one does email-only match?
-        // For now, let's stick to the stricter email+name match for updating.
-        // If it doesn't match email+name, we'll create a new person.
-        /*
+        // If no exact name match found, try finding by email only
         if (!$person) {
-             $person = $this->get_person_by_email($donor['email']); // Fallback attempt
+            $args = array(
+                'post_type' => 'lcd_person',
+                'posts_per_page' => -1,
+                'meta_query' => array(
+                    array(
+                        'key' => '_lcd_person_email',
+                        'value' => $donor['email'],
+                        'compare' => '='
+                    )
+                )
+            );
+            
+            $email_matches = get_posts($args);
+            
+            // Only use email match if exactly one person found
+            if (count($email_matches) === 1) {
+                $person = $email_matches[0];
+            }
         }
-        */
+        
 
         if ($person) {
             // Update existing person (found by email+name)
@@ -2281,67 +2284,6 @@ class LCD_People {
     }
 
     /**
-     * Check and update expired memberships
-     */
-    public function check_expired_memberships() {
-        // Get all active members
-        $args = array(
-            'post_type' => 'lcd_person',
-            'posts_per_page' => -1,
-            'meta_query' => array(
-                array(
-                    'key' => '_lcd_person_membership_status',
-                    'value' => 'active',
-                    'compare' => '='
-                )
-            )
-        );
-
-        $members = get_posts($args);
-
-        foreach ($members as $member) {
-            $end_date = get_post_meta($member->ID, '_lcd_person_end_date', true);
-            
-            // Skip if no end date
-            if (empty($end_date)) {
-                continue;
-            }
-
-            // Check if membership has expired
-            $today = date('Y-m-d');
-            if ($end_date < $today) {
-                // Update membership status to expired
-                update_post_meta($member->ID, '_lcd_person_membership_status', 'expired');
-                
-                // Store previous status for sync
-                update_post_meta($member->ID, '_lcd_person_previous_status', 'active');
-                
-                // Sync to Sender.net
-                $this->sync_person_to_sender($member->ID);
-                
-                // Add sync record
-                $this->add_sync_record($member->ID, 'Membership Expiration', true, 'Membership expired and status updated');
-            }
-        }
-    }
-
-    /**
-     * Schedule the daily membership check
-     */
-    public function schedule_membership_check() {
-        if (!wp_next_scheduled('lcd_check_expired_memberships')) {
-            wp_schedule_event(strtotime('tomorrow midnight'), 'daily', 'lcd_check_expired_memberships');
-        }
-    }
-
-    /**
-     * Clear the scheduled membership check
-     */
-    public function clear_membership_check_schedule() {
-        wp_clear_scheduled_hook('lcd_check_expired_memberships');
-    }
-
-    /**
      * Disable the default months dropdown for our post type
      */
     public function disable_months_dropdown($disable, $post_type) {
@@ -2836,11 +2778,7 @@ class LCD_People {
 
             // If primary and has email, attempt sync
             $results['attempted']++;
-            
-            // Temporarily override the add_sync_record within sync_person_to_sender
-            // to capture failures specifically for this bulk operation.
-            // This is a bit tricky. Let's try directly calling the sync logic parts.
-            // OR, more simply, call sync_person_to_sender and check its return.
+ 
             
             // Call the sync function (trigger_automation = false)
             $sync_success = $this->sync_person_to_sender($person_id, false); 
@@ -3022,7 +2960,10 @@ class LCD_People {
 
 // Initialize the plugin
 function lcd_people_init() {
-    LCD_People::get_instance();
+    $plugin = LCD_People::get_instance();
+    
+    // Initialize frontend functionality
+    LCD_People_Frontend_Init();
 }
 add_action('plugins_loaded', 'lcd_people_init');
 
