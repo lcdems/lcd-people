@@ -125,6 +125,21 @@
     border-left-color: var(--color-accent, #ee8f13);
 }
 
+/* Notice for users without person records */
+.lcd-member-no-record-notice {
+    background-color: #fff8e1;
+    border-left: 4px solid var(--color-accent, #ee8f13);
+    padding: var(--spacing-sm, 1rem) var(--spacing-md, 2rem);
+    margin-bottom: var(--spacing-md, 2rem);
+    border-radius: var(--border-radius, 4px);
+}
+
+.lcd-member-no-record-notice p {
+    margin: 0;
+    color: #b8860b;
+    font-style: italic;
+}
+
 /* Responsive Styles */
 @media (max-width: 600px) {
     .lcd-member-profile {

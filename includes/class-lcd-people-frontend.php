@@ -176,42 +176,61 @@ class LCD_People_Frontend {
         
         // Check if user has a person record
         $person = $this->get_current_user_person();
+        $current_user = wp_get_current_user();
         
-        if (!$person) {
-            return sprintf(
-                '<div class="lcd-member-no-record">%s</div>',
-                __('You do not have a member record. Please contact the administrator.', 'lcd-people')
-            );
+        // Initialize variables with defaults
+        $person_id = null;
+        $first_name = $current_user->first_name ?: ($current_user->display_name ?: $current_user->user_login);
+        $last_name = $current_user->last_name ?: '';
+        $email = $current_user->user_email;
+        $phone = '';
+        $address = '';
+        $membership_status = '';
+        $membership_type = '';
+        $is_sustaining = false;
+        $start_date = '';
+        $end_date = '';
+        $roles = array();
+        $precincts = array();
+        $has_person_record = false;
+        
+        if ($person) {
+            // User has a person record - get all the data
+            $has_person_record = true;
+            $person_id = $person->ID;
+            $first_name = get_post_meta($person_id, '_lcd_person_first_name', true) ?: $first_name;
+            $last_name = get_post_meta($person_id, '_lcd_person_last_name', true) ?: $last_name;
+            $email = get_post_meta($person_id, '_lcd_person_email', true) ?: $email;
+            $phone = get_post_meta($person_id, '_lcd_person_phone', true);
+            $address = get_post_meta($person_id, '_lcd_person_address', true);
+            
+            // Get membership details
+            $membership_status = get_post_meta($person_id, '_lcd_person_membership_status', true);
+            $membership_type = get_post_meta($person_id, '_lcd_person_membership_type', true);
+            $is_sustaining = get_post_meta($person_id, '_lcd_person_is_sustaining', true);
+            $start_date = get_post_meta($person_id, '_lcd_person_start_date', true);
+            $end_date = get_post_meta($person_id, '_lcd_person_end_date', true);
+            
+            // Get taxonomies
+            $roles = wp_get_post_terms($person_id, 'lcd_role', array('fields' => 'names'));
+            $precincts = wp_get_post_terms($person_id, 'lcd_precinct', array('fields' => 'names'));
         }
-        
-        // Get person meta data
-        $person_id = $person->ID;
-        $first_name = get_post_meta($person_id, '_lcd_person_first_name', true);
-        $last_name = get_post_meta($person_id, '_lcd_person_last_name', true);
-        $email = get_post_meta($person_id, '_lcd_person_email', true);
-        $phone = get_post_meta($person_id, '_lcd_person_phone', true);
-        $address = get_post_meta($person_id, '_lcd_person_address', true);
-        
-        // Get membership details
-        $membership_status = get_post_meta($person_id, '_lcd_person_membership_status', true);
-        $membership_type = get_post_meta($person_id, '_lcd_person_membership_type', true);
-        $is_sustaining = get_post_meta($person_id, '_lcd_person_is_sustaining', true);
-        $start_date = get_post_meta($person_id, '_lcd_person_start_date', true);
-        $end_date = get_post_meta($person_id, '_lcd_person_end_date', true);
         
         // Format dates nicely if they exist
         $start_date = $start_date ? date_i18n(get_option('date_format'), strtotime($start_date)) : '';
         $end_date = $end_date ? date_i18n(get_option('date_format'), strtotime($end_date)) : '';
-        
-        // Get taxonomies
-        $roles = wp_get_post_terms($person_id, 'lcd_role', array('fields' => 'names'));
-        $precincts = wp_get_post_terms($person_id, 'lcd_precinct', array('fields' => 'names'));
         
         // Start output buffer
         ob_start();
         ?>
         <div class="lcd-member-profile">
             <h2><?php echo esc_html(sprintf(__('%s\'s Member Profile', 'lcd-people'), $first_name)); ?></h2>
+            
+            <?php if (!$has_person_record): ?>
+                <div class="lcd-member-no-record-notice">
+                    <p><em><?php _e('Your member record is being set up. Some information may not be available yet.', 'lcd-people'); ?></em></p>
+                </div>
+            <?php endif; ?>
             
             <div class="lcd-member-profile-section lcd-member-status">
                 <h3><?php _e('Membership Status', 'lcd-people'); ?></h3>
@@ -273,7 +292,7 @@ class LCD_People_Frontend {
                 <h3><?php _e('Contact Information', 'lcd-people'); ?></h3>
                 <p>
                     <strong><?php _e('Name:', 'lcd-people'); ?></strong>
-                    <?php echo esc_html("$first_name $last_name"); ?>
+                    <?php echo esc_html(trim("$first_name $last_name")); ?>
                 </p>
                 
                 <?php if ($email): ?>

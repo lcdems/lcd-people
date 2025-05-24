@@ -19,7 +19,7 @@ There are two ways to display member profiles on the front-end:
 
 #### 1. Page Template
 
-Create a new page and select the "Member Profile" template from the Page Attributes section. The profile will be displayed automatically to logged-in users. Users without a linked person record will see a message.
+Create a new page and select the "Member Profile" template from the Page Attributes section. The profile will be displayed automatically to logged-in users. Users without a linked person record will still see their dashboard with basic contact information from their WordPress user account, but no membership data.
 
 #### 2. Shortcode
 
@@ -55,6 +55,13 @@ The front-end functionality is contained in a separate class for better organiza
 - Template file - Located in `/templates/template-member-profile.php`
 - Assets - CSS/JS files are in `/assets/css/frontend.css` and `/assets/js/frontend.js`
 
+### Graceful Handling
+
+The member profile gracefully handles users who don't yet have person records by:
+- Displaying basic user information from their WordPress account
+- Showing a friendly notice that their member record is being set up
+- Providing the full dashboard interface without membership-specific data
+
 ## Styling the Profile
 
 You can customize the appearance of the member profile by adding custom CSS to your theme or a CSS plugin.
@@ -63,4 +70,5 @@ The profile uses the following main CSS classes:
 - `.lcd-member-profile-container` - The overall container
 - `.lcd-member-profile` - The profile wrapper
 - `.lcd-member-profile-section` - Each section of information
-- `.lcd-membership-badge` - Status badges (active, expired, etc.) 
+- `.lcd-membership-badge` - Status badges (active, expired, etc.)
+- `.lcd-member-no-record-notice` - Notice shown to users without person records 
