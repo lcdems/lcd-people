@@ -228,7 +228,7 @@ class LCD_People_Frontend {
             
             <?php if (!$has_person_record): ?>
                 <div class="lcd-member-no-record-notice">
-                    <p><em><?php _e('Your member record is being set up. Some information may not be available yet.', 'lcd-people'); ?></em></p>
+                    <p><em><?php _e('No active membership record found.', 'lcd-people'); ?></em></p>
                 </div>
             <?php endif; ?>
             
@@ -253,6 +253,9 @@ class LCD_People_Frontend {
                 <?php else: ?>
                     <div class="lcd-membership-badge none">
                         <?php _e('Not a Member', 'lcd-people'); ?>
+                    </div>
+                    <div class="lcd-membership-badge none">
+                        <a href="<?php echo home_url('/membership'); ?>"><?php _e('Learn about membership', 'lcd-people'); ?></a>
                     </div>
                 <?php endif; ?>
                 
