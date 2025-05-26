@@ -28,6 +28,8 @@ class LCD_People {
     }
 
     private function __construct() {
+        error_log('LCD People: Plugin constructor called');
+        
         add_action('init', array($this, 'register_post_type'));
         add_action('init', array($this, 'register_taxonomies'));
         add_action('add_meta_boxes', array($this, 'add_meta_boxes'));
@@ -65,8 +67,10 @@ class LCD_People {
         add_action('admin_menu', array($this, 'add_settings_page'));
         add_action('admin_init', array($this, 'register_settings'));
 
-        // Register REST API endpoint
-        add_action('rest_api_init', array($this, 'register_rest_endpoint'));
+        // Register REST API endpoint - add early and late hooks to ensure it runs
+        add_action('rest_api_init', array($this, 'register_rest_endpoint'), 10);
+        add_action('init', array($this, 'register_rest_endpoint'), 999);
+        error_log('LCD People: REST API hooks registered');
 
         // Register cron job for membership status updates
         add_action('lcd_check_membership_statuses', array($this, 'check_membership_statuses'));
@@ -81,6 +85,8 @@ class LCD_People {
         add_action('lcd_person_actblue_updated', array($this, 'handle_person_sync'), 10, 1);
         add_action('lcd_member_status_changed', array($this, 'handle_person_sync'), 10, 1);
         add_action('save_post_lcd_person', array($this, 'handle_person_save'), 10, 3);
+
+        error_log('LCD People: All hooks registered');
 
         // Add cancel membership AJAX handler
         add_action('wp_ajax_lcd_cancel_membership', array($this, 'ajax_cancel_membership'));
@@ -2051,6 +2057,8 @@ class LCD_People {
      * Register REST API endpoint
      */
     public function register_rest_endpoint() {
+        error_log('LCD People: Registering REST endpoints');
+        
         // Register ActBlue webhook endpoint
         register_rest_route('lcd-people/v1', '/actblue-webhook', array(
             'methods' => 'POST',
@@ -2060,31 +2068,22 @@ class LCD_People {
 
         // Register a separate namespace for the configured Forminator form
         $configured_form_id = get_option('lcd_people_forminator_volunteer_form');
+        error_log('LCD People: Configured form ID for REST route: ' . $configured_form_id);
         
         if (!empty($configured_form_id)) {
             // Create a unique namespace for this specific form
             $form_namespace = 'volunteer-form-' . $configured_form_id;
+            error_log('LCD People: Registering route with namespace: ' . $form_namespace);
+            
             register_rest_route($form_namespace . '/v1', '/submit', array(
-                array(
-                    'methods' => array('POST'),
-                    'callback' => array($this, 'handle_forminator_webhook'),
-                    'permission_callback' => '__return_true', // Forminator doesn't support auth headers
-                    'args' => array(),
-                    'show_in_index' => false // Hide from API discovery
-                ),
-                array(
-                    'methods' => array('GET'),
-                    'callback' => function() {
-                        return new WP_Error(
-                            'invalid_method',
-                            __('This endpoint only accepts POST requests from Forminator webhooks.', 'lcd-people'),
-                            array('status' => 405)
-                        );
-                    },
-                    'permission_callback' => '__return_true',
-                    'show_in_index' => false
-                )
+                'methods' => 'POST,GET',  // Allow both POST and GET for testing
+                'callback' => array($this, 'handle_forminator_webhook'),
+                'permission_callback' => '__return_true'
             ));
+            
+            error_log('LCD People: Route registered. Full URL will be: ' . rest_url($form_namespace . '/v1/submit'));
+        } else {
+            error_log('LCD People: No form ID configured, skipping Forminator route registration');
         }
     }
 
@@ -2483,149 +2482,28 @@ class LCD_People {
      * Handle Forminator webhook
      */
     public function handle_forminator_webhook($request) {
-        $params = $request->get_json_params();
-        
-        // If no JSON data, try form data
-        if (empty($params)) {
-            $params = $request->get_params();
-        }
-
-        // Debug logging
-        error_log('LCD People: Forminator webhook received');
+        // Debug ALL possible incoming data
+        error_log('LCD People: ========= FORMINATOR WEBHOOK DEBUG START =========');
         error_log('LCD People: Route = ' . $request->get_route());
-        error_log('LCD People: Params = ' . print_r($params, true));
-
-        // Extract form ID from the request route (namespace)
-        $route = $request->get_route();
-        preg_match('/volunteer-form-([^\/]+)\/v1\/submit/', $route, $matches);
-        $url_form_id = isset($matches[1]) ? $matches[1] : '';
         
-        error_log('LCD People: Extracted form ID = ' . $url_form_id);
+        // Try all possible ways to get the data
+        $json_params = $request->get_json_params();
+        $post_params = $request->get_params();
+        $body = $request->get_body();
+        $headers = $request->get_headers();
         
-        // Get the configured form ID and mappings
-        $configured_form_id = get_option('lcd_people_forminator_volunteer_form');
-        $mappings = get_option('lcd_people_forminator_volunteer_mappings', array());
+        error_log('LCD People: JSON Params = ' . print_r($json_params, true));
+        error_log('LCD People: POST Params = ' . print_r($post_params, true));
+        error_log('LCD People: Raw Body = ' . print_r($body, true));
+        error_log('LCD People: Headers = ' . print_r($headers, true));
+        error_log('LCD People: ========= FORMINATOR WEBHOOK DEBUG END =========');
 
-        error_log('LCD People: Configured form ID = ' . $configured_form_id);
-        error_log('LCD People: Mappings = ' . print_r($mappings, true));
-
-        if (empty($configured_form_id)) {
-            return new WP_Error(
-                'no_form_configured',
-                __('No volunteer form configured.', 'lcd-people'),
-                array('status' => 400)
-            );
-        }
-
-        if (empty($mappings)) {
-            return new WP_Error(
-                'no_mappings_configured',
-                __('No field mappings configured.', 'lcd-people'),
-                array('status' => 400)
-            );
-        }
-
-        // Verify this is the correct form using namespace form ID
-        if ($url_form_id !== $configured_form_id) {
-            return array(
-                'success' => true,
-                'message' => 'Ignored - form ID in namespace does not match configured volunteer form'
-            );
-        }
-
-        // Map form data to person fields
-        $person_data = array();
-        $role_data = '';
-        $precinct_data = '';
-
-        foreach ($mappings as $form_field => $person_field) {
-            if (empty($person_field)) {
-                continue;
-            }
-
-            $value = null;
-
-            // Handle special name field mappings (e.g., name-1-first-name)
-            if (strpos($form_field, '-first-name') !== false) {
-                // Extract the base field name (e.g., name-1 from name-1-first-name)
-                $base_field = str_replace('-first-name', '', $form_field);
-                // Look for the first name in Forminator's name field format
-                if (isset($params[$base_field . '-first-name'])) {
-                    $value = sanitize_text_field($params[$base_field . '-first-name']);
-                }
-            } elseif (strpos($form_field, '-last-name') !== false) {
-                // Extract the base field name (e.g., name-1 from name-1-last-name)
-                $base_field = str_replace('-last-name', '', $form_field);
-                // Look for the last name in Forminator's name field format
-                if (isset($params[$base_field . '-last-name'])) {
-                    $value = sanitize_text_field($params[$base_field . '-last-name']);
-                }
-            } elseif (strpos($form_field, '-middle-name') !== false) {
-                // Extract the base field name (e.g., name-1 from name-1-middle-name)
-                $base_field = str_replace('-middle-name', '', $form_field);
-                // Look for the middle name in Forminator's name field format
-                if (isset($params[$base_field . '-middle-name'])) {
-                    $value = sanitize_text_field($params[$base_field . '-middle-name']);
-                }
-            } elseif (isset($params[$form_field])) {
-                // Regular field mapping
-                $value = sanitize_text_field($params[$form_field]);
-            }
-
-            if ($value !== null) {
-                if ($person_field === 'role') {
-                    $role_data = $value;
-                } elseif ($person_field === 'precinct') {
-                    $precinct_data = $value;
-                } else {
-                    $person_data[$person_field] = $value;
-                }
-            }
-        }
-
-        // Validate required fields
-        if (empty($person_data['first_name']) || empty($person_data['last_name'])) {
-            return new WP_Error(
-                'missing_required_fields',
-                __('First name and last name are required.', 'lcd-people'),
-                array('status' => 400)
-            );
-        }
-
-        // Check if person already exists by email and name
-        $existing_person = null;
-        if (!empty($person_data['email'])) {
-            $existing_person = $this->get_person_by_email(
-                $person_data['email'], 
-                $person_data['first_name'], 
-                $person_data['last_name']
-            );
-        }
-
-        if ($existing_person) {
-            // Update existing person
-            $person_id = $existing_person->ID;
-            $this->update_person_from_forminator($person_id, $person_data, $role_data, $precinct_data);
-            $response_message = 'Existing person updated with volunteer information';
-        } else {
-            // Create new person
-            $person_id = $this->create_person_from_forminator($person_data, $role_data, $precinct_data);
-            if (is_wp_error($person_id)) {
-                return $person_id;
-            }
-            $response_message = 'New volunteer person created successfully';
-        }
-
-        $this->add_sync_record($person_id, 'Forminator Webhook', true, $response_message);
-
+        // For testing, just return success
         return array(
             'success' => true,
-            'message' => $response_message,
-            'person_id' => $person_id
+            'message' => 'Debug mode - webhook received'
         );
     }
-
-
 
     /**
      * Update person from Forminator data (selective updates for existing people)
@@ -3773,12 +3651,17 @@ class LCD_People {
 
 // Initialize the plugin
 function lcd_people_init() {
+    error_log('LCD People: Plugin initialization function called');
     $plugin = LCD_People::get_instance();
+    error_log('LCD People: Plugin instance created');
     
     // Initialize frontend functionality
     LCD_People_Frontend_Init();
 }
-add_action('plugins_loaded', 'lcd_people_init');
+
+// Hook into WordPress as early as possible
+add_action('init', 'lcd_people_init', 0);
+add_action('rest_api_init', 'lcd_people_init', 0);
 
 // Register deactivation hook
 register_deactivation_hook(__FILE__, array('LCD_People', 'deactivate')); 
