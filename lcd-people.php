@@ -1780,9 +1780,32 @@ class LCD_People {
         // Try to find existing person by email
         $person = $this->get_person_by_email($person_data['email']);
 
+        // Check for submission ID (entry_id) in the form data
+        $submission_id = null;
+        if (isset($form_data['entry_id'])) {
+            $submission_id = intval($form_data['entry_id']);
+            $debug_info['steps'][] = array(
+                'step' => 'submission_id',
+                'status' => 'info',
+                'message' => 'Found submission ID: ' . $submission_id
+            );
+        }
+        
+        // Also check if submission ID was mapped through field mappings
+        if (empty($submission_id) && isset($person_data['latest_volunteer_submission_id'])) {
+            $submission_id = intval($person_data['latest_volunteer_submission_id']);
+            // Remove it from person_data since it's not a regular person field
+            unset($person_data['latest_volunteer_submission_id']);
+            $debug_info['steps'][] = array(
+                'step' => 'submission_id_mapped',
+                'status' => 'info',
+                'message' => 'Found submission ID from field mapping: ' . $submission_id
+            );
+        }
+
         if ($person) {
             // Update existing person
-            $this->update_person_from_forminator($person->ID, $person_data);
+            $this->update_person_from_forminator($person->ID, $person_data, '', '', $submission_id);
             $this->add_sync_record($person->ID, 'Forminator', true, 'Person updated from volunteer form');
             $response_message = 'Person updated successfully';
             $debug_info['steps'][] = array(
@@ -1792,7 +1815,7 @@ class LCD_People {
             );
         } else {
             // Create new person
-            $person_id = $this->create_person_from_forminator($person_data);
+            $person_id = $this->create_person_from_forminator($person_data, '', '', $submission_id);
             if (is_wp_error($person_id)) {
                 $debug_info['steps'][] = array(
                     'step' => 'create_person',
@@ -1827,7 +1850,7 @@ class LCD_People {
     /**
      * Update person from Forminator data (selective updates for existing people)
      */
-    private function update_person_from_forminator($person_id, $person_data, $role_data = '', $precinct_data = '') {
+    private function update_person_from_forminator($person_id, $person_data, $role_data = '', $precinct_data = '', $submission_id = null) {
         // For existing people, only update fields that are empty or if the new data is more complete
         $fields_to_update = array();
         
@@ -1880,6 +1903,11 @@ class LCD_People {
             $this->update_primary_status($person_id, $fields_to_update['email']);
         }
 
+        // Store submission ID if provided
+        if (!empty($submission_id)) {
+            update_post_meta($person_id, '_lcd_person_latest_volunteer_submission_id', $submission_id);
+        }
+
         // Sync to Sender.net with volunteer group (this will add volunteer group if not already present)
         $this->sync_volunteer_to_sender($person_id);
     }
@@ -1887,7 +1915,7 @@ class LCD_People {
     /**
      * Create person from Forminator data
      */
-    private function create_person_from_forminator($person_data, $role_data = '', $precinct_data = '') {
+    private function create_person_from_forminator($person_data, $role_data = '', $precinct_data = '', $submission_id = null) {
         // Create post
         $post_data = array(
             'post_title'  => $person_data['first_name'] . ' ' . $person_data['last_name'],
@@ -1919,6 +1947,11 @@ class LCD_People {
         // Handle Primary Status (Automatic Assignment)
         if (!empty($person_data['email'])) {
             $this->update_primary_status($person_id, $person_data['email']);
+        }
+
+        // Store submission ID if provided
+        if (!empty($submission_id)) {
+            update_post_meta($person_id, '_lcd_person_latest_volunteer_submission_id', $submission_id);
         }
 
         // Sync to Sender.net with volunteer group
