@@ -196,6 +196,28 @@
     line-height: var(--line-height-normal, 1.5);
 }
 
+.lcd-volunteer-no-interests {
+    text-align: center;
+    padding: var(--spacing-md, 2rem);
+    color: var(--color-text-muted, #6B7280);
+}
+
+.lcd-volunteer-no-interests p {
+    margin: var(--spacing-xs, 0.5rem) 0;
+}
+
+.lcd-volunteer-signup-link {
+    color: var(--color-primary, #2a5fb4);
+    text-decoration: none;
+    font-weight: 600;
+    border-bottom: 1px solid transparent;
+    transition: border-bottom-color 0.2s ease;
+}
+
+.lcd-volunteer-signup-link:hover {
+    border-bottom-color: var(--color-primary, #2a5fb4);
+}
+
 /* Volunteer Shifts */
 .lcd-volunteer-upcoming-shifts,
 .lcd-volunteer-past-shifts {

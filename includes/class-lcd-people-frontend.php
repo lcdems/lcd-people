@@ -445,7 +445,7 @@ class LCD_People_Frontend {
         ?>
         <div class="lcd-member-profile-section lcd-volunteer-info">
             <h3><?php _e('Volunteering Information', 'lcd-people'); ?></h3>
-            
+            <p>If you need assistance with your volunteer record, please contact us at <a href="mailto:volunteer@lewiscountydemocrats.org">volunteer@lewiscountydemocrats.org</a>.</p>
             <?php if (!$has_person_record): ?>
                 <div class="lcd-volunteer-no-record">
                     <p><em><?php _e('No volunteer record found.', 'lcd-people'); ?> <a href="<?php echo get_bloginfo('url'); ?>/volunteer"><?php _e('Sign up here', 'lcd-people'); ?></a> <?php _e('to get involved!', 'lcd-people'); ?></em></p>
@@ -453,9 +453,9 @@ class LCD_People_Frontend {
             <?php else: ?>
                 
                 <!-- Volunteer Interest Form Data -->
-                <?php if ($volunteer_submission_data): ?>
-                    <div class="lcd-volunteer-interests">
-                        <h4><?php _e('Volunteer Interests', 'lcd-people'); ?></h4>
+                <div class="lcd-volunteer-interests">
+                    <h4><?php _e('Volunteer Interests', 'lcd-people'); ?></h4>
+                    <?php if ($volunteer_submission_data): ?>
                         <div class="lcd-volunteer-submission-info">
                             <p class="submission-date">
                                 <strong><?php _e('Last updated:', 'lcd-people'); ?></strong>
@@ -479,8 +479,18 @@ class LCD_People_Frontend {
                                 <?php endforeach; ?>
                             </div>
                         <?php endif; ?>
-                    </div>
-                <?php endif; ?>
+                    <?php else: ?>
+                        <div class="lcd-volunteer-no-interests">
+                            <p><?php _e('No volunteer interests on file.', 'lcd-people'); ?></p>
+                            <p>
+                                <a href="<?php echo get_bloginfo('url'); ?>/volunteer" class="lcd-volunteer-signup-link">
+                                    <?php _e('Fill out our volunteer interest form', 'lcd-people'); ?>
+                                </a> 
+                                <?php _e('to let us know how you\'d like to help!', 'lcd-people'); ?>
+                            </p>
+                        </div>
+                    <?php endif; ?>
+                </div>
                 
                 <!-- Upcoming Volunteer Shifts -->
                 <div class="lcd-volunteer-upcoming-shifts">
