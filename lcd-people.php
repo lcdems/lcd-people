@@ -7,9 +7,6 @@
  * Author: LCD
  * License: GPL v2 or later
  * Text Domain: lcd-people
- * 
- * @phpstan-ignore-next-line
- * External plugin classes (Forminator_API, Forminator_Form_Field_Model) are checked with class_exists()
  */
 
 if (!defined('ABSPATH')) {
@@ -1493,12 +1490,6 @@ class LCD_People {
 
     public function render_forminator_volunteer_form_field() {
         $selected_form = get_option('lcd_people_forminator_volunteer_form');
-        
-        // Also check for form_selected URL parameter (when user just selected a form)
-        if (empty($selected_form) && isset($_GET['form_selected'])) {
-            $selected_form = sanitize_text_field($_GET['form_selected']);
-        }
-        
         $forms = $this->get_forminator_forms();
         ?>
         <select name="lcd_people_forminator_volunteer_form" id="forminator_volunteer_form">
@@ -1529,11 +1520,6 @@ class LCD_People {
     public function render_forminator_volunteer_mappings_field() {
         $selected_form = get_option('lcd_people_forminator_volunteer_form');
         $mappings = get_option('lcd_people_forminator_volunteer_mappings', array());
-        
-        // Also check for form_selected URL parameter (when user just selected a form)
-        if (empty($selected_form) && isset($_GET['form_selected'])) {
-            $selected_form = sanitize_text_field($_GET['form_selected']);
-        }
         
         if (empty($selected_form)) {
             echo '<p class="description">' . __('Please select a form first to configure field mappings.', 'lcd-people') . '</p>';
@@ -1593,11 +1579,6 @@ class LCD_People {
         <?php
     }
 
-    /**
-     * Get available Forminator forms
-     * 
-     * @return array Array of form_id => form_name pairs
-     */
     private function get_forminator_forms() {
         $forms = array();
         
@@ -1607,7 +1588,6 @@ class LCD_People {
         }
 
         try {
-            /** @var array|null $forminator_forms */
             $forminator_forms = Forminator_API::get_forms(null, 1, 999); // Get up to 999 forms
             
             if (is_array($forminator_forms)) {
@@ -1624,12 +1604,6 @@ class LCD_People {
         return $forms;
     }
 
-    /**
-     * Get fields from a Forminator form
-     * 
-     * @param string $form_id The form ID
-     * @return array Array of field_id => field_label pairs
-     */
     private function get_forminator_form_fields($form_id) {
         $fields = array();
         
@@ -1638,13 +1612,11 @@ class LCD_People {
         }
 
         try {
-            /** @var object|null $form */
             $form = Forminator_API::get_form($form_id);
             
             if ($form && isset($form->fields)) {
                 foreach ($form->fields as $field) {
-                    // Check if field is a Forminator field object (avoiding instanceof for linter)
-                    if (is_object($field) && method_exists($field, 'get_field_label')) {
+                    if (is_object($field) && $field instanceof Forminator_Form_Field_Model) {
                         // Get the field data from the Forminator field model
                         $element_id = null;
                         $field_label = null;
