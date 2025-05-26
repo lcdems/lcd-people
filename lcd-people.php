@@ -1493,6 +1493,12 @@ class LCD_People {
 
     public function render_forminator_volunteer_form_field() {
         $selected_form = get_option('lcd_people_forminator_volunteer_form');
+        
+        // Also check for form_selected URL parameter (when user just selected a form)
+        if (empty($selected_form) && isset($_GET['form_selected'])) {
+            $selected_form = sanitize_text_field($_GET['form_selected']);
+        }
+        
         $forms = $this->get_forminator_forms();
         ?>
         <select name="lcd_people_forminator_volunteer_form" id="forminator_volunteer_form">
@@ -1523,6 +1529,11 @@ class LCD_People {
     public function render_forminator_volunteer_mappings_field() {
         $selected_form = get_option('lcd_people_forminator_volunteer_form');
         $mappings = get_option('lcd_people_forminator_volunteer_mappings', array());
+        
+        // Also check for form_selected URL parameter (when user just selected a form)
+        if (empty($selected_form) && isset($_GET['form_selected'])) {
+            $selected_form = sanitize_text_field($_GET['form_selected']);
+        }
         
         if (empty($selected_form)) {
             echo '<p class="description">' . __('Please select a form first to configure field mappings.', 'lcd-people') . '</p>';
