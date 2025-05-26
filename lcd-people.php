@@ -67,9 +67,8 @@ class LCD_People {
         add_filter('manage_users_columns', array($this, 'add_user_column'));
         add_filter('manage_users_custom_column', array($this, 'render_user_column'), 10, 3);
 
-        // Register REST API endpoint - add early and late hooks to ensure it runs
+        // Register REST API endpoint
         add_action('rest_api_init', array($this, 'register_rest_endpoint'), 10);
-        add_action('init', array($this, 'register_rest_endpoint'), 999);
         
 
         // Register cron job for membership status updates
