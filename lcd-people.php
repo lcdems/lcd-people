@@ -67,9 +67,6 @@ class LCD_People {
 
         // Register REST API endpoint
         add_action('rest_api_init', array($this, 'register_rest_endpoint'));
-        
-        // Flush rewrite rules on plugin activation (only once)
-        register_activation_hook(__FILE__, array($this, 'flush_rewrite_rules_on_activation'));
 
         // Register cron job for membership status updates
         add_action('lcd_check_membership_statuses', array($this, 'check_membership_statuses'));
@@ -1510,12 +1507,7 @@ class LCD_People {
                 <h4><?php _e('Webhook URL', 'lcd-people'); ?></h4>
                 <p><?php _e('Configure your Forminator form to send webhooks to this form-specific URL:', 'lcd-people'); ?></p>
                 <code style="background: white; padding: 5px; display: block; margin: 5px 0;">
-                    <?php 
-                    $webhook_url = rest_url('volunteer-form-' . $selected_form . '/v1/');
-                    echo esc_url($webhook_url);
-                    // Debug logging
-                    error_log('LCD People: Generated webhook URL for form ' . $selected_form . ': ' . $webhook_url);
-                    ?>
+                    <?php echo esc_url(rest_url('volunteer-form-' . $selected_form . '/v1/')); ?>
                 </code>
                 <p class="description">
                     <?php _e('In your Forminator form settings, go to Integrations > Webhooks and add this URL. This URL is specific to the selected form for security.', 'lcd-people'); ?>
@@ -2059,82 +2051,25 @@ class LCD_People {
      * Register REST API endpoint
      */
     public function register_rest_endpoint() {
-        // Debug logging
-        error_log('LCD People: register_rest_endpoint() method called');
-        error_log('LCD People: Current hook: ' . current_action());
-        error_log('LCD People: WordPress REST API enabled: ' . (function_exists('rest_url') ? 'YES' : 'NO'));
-        
-        // Try registering namespace first
-        $namespace_registered = register_rest_route('lcd-people/v1', '', array(
-            'methods' => 'GET',
-            'callback' => function() {
-                return array('namespace' => 'lcd-people/v1', 'status' => 'active');
-            },
-            'permission_callback' => '__return_true'
-        ));
-        error_log('LCD People: Namespace registered: ' . ($namespace_registered ? 'YES' : 'NO'));
-        
-        $actblue_registered = register_rest_route('lcd-people/v1', '/actblue-webhook', array(
+        // Register ActBlue webhook endpoint
+        register_rest_route('lcd-people/v1', '/actblue-webhook', array(
             'methods' => 'POST',
             'callback' => array($this, 'handle_actblue_webhook'),
             'permission_callback' => array($this, 'verify_webhook_auth')
         ));
 
-        // Register a separate namespace for each configured form
+        // Register a separate namespace for the configured Forminator form
         $configured_form_id = get_option('lcd_people_forminator_volunteer_form');
-        $forminator_registered = false;
         
         if (!empty($configured_form_id)) {
             // Create a unique namespace for this specific form
             $form_namespace = 'volunteer-form-' . $configured_form_id;
-            $forminator_registered = register_rest_route($form_namespace . '/v1', '/', array(
+            register_rest_route($form_namespace . '/v1', '/', array(
                 'methods' => 'POST',
                 'callback' => array($this, 'handle_forminator_webhook'),
-                'permission_callback' => '__return_true', // Forminator doesn't support auth headers
+                'permission_callback' => '__return_true' // Forminator doesn't support auth headers
             ));
         }
-        
-        // Also register a generic fallback endpoint for debugging/backward compatibility
-        $forminator_generic_registered = register_rest_route('lcd-people/v1', '/forminator-webhook', array(
-            'methods' => 'POST',
-            'callback' => array($this, 'handle_forminator_webhook_generic'),
-            'permission_callback' => '__return_true'
-        ));
-        
-        // Add a simple test endpoint
-        $test_registered = register_rest_route('lcd-people/v1', '/test', array(
-            'methods' => 'GET',
-            'callback' => function() {
-                return array('status' => 'success', 'message' => 'LCD People REST API is working');
-            },
-            'permission_callback' => '__return_true'
-        ));
-        
-        // Add an even simpler endpoint
-        $simple_registered = register_rest_route('lcd-people/v1', '/simple', array(
-            'methods' => array('GET', 'POST'),
-            'callback' => function() {
-                return 'Simple endpoint works';
-            },
-            'permission_callback' => '__return_true'
-        ));
-        
-        // Debug logging
-        error_log('LCD People: ActBlue endpoint registered: ' . ($actblue_registered ? 'YES' : 'NO'));
-        error_log('LCD People: Forminator endpoint registered: ' . ($forminator_registered ? 'YES' : 'NO'));
-        error_log('LCD People: Forminator generic endpoint registered: ' . ($forminator_generic_registered ? 'YES' : 'NO'));
-        error_log('LCD People: Test endpoint registered: ' . ($test_registered ? 'YES' : 'NO'));
-        error_log('LCD People: Simple endpoint registered: ' . ($simple_registered ? 'YES' : 'NO'));
-        
-        // Also log all registered routes for this namespace
-        $routes = rest_get_server()->get_routes();
-        $our_routes = array();
-        foreach ($routes as $route => $handlers) {
-            if (strpos($route, '/lcd-people/v1') === 0) {
-                $our_routes[] = $route;
-            }
-        }
-        error_log('LCD People: All registered routes for our namespace: ' . print_r($our_routes, true));
     }
 
     /**
@@ -2544,10 +2479,6 @@ class LCD_People {
         preg_match('/volunteer-form-([^\/]+)\/v1/', $route, $matches);
         $url_form_id = isset($matches[1]) ? $matches[1] : '';
         
-        // Debug logging
-        error_log('LCD People: Forminator webhook called via namespace form_id: ' . $url_form_id);
-        error_log('LCD People: Request route: ' . $route);
-        
         // Get the configured form ID and mappings
         $configured_form_id = get_option('lcd_people_forminator_volunteer_form');
         $mappings = get_option('lcd_people_forminator_volunteer_mappings', array());
@@ -2668,38 +2599,7 @@ class LCD_People {
         );
     }
 
-    /**
-     * Handle generic Forminator webhook (for debugging/backward compatibility)
-     */
-    public function handle_forminator_webhook_generic($request) {
-        $params = $request->get_json_params();
-        
-        // If no JSON data, try form data
-        if (empty($params)) {
-            $params = $request->get_params();
-        }
 
-        // Log the request for debugging
-        error_log('LCD People: Generic Forminator webhook called with data: ' . print_r($params, true));
-
-        // Extract form ID from webhook data (Forminator includes this)
-        $form_id = isset($params['form_id']) ? $params['form_id'] : '';
-        
-        if (empty($form_id)) {
-            return new WP_Error(
-                'missing_form_id',
-                __('Form ID not found in webhook data.', 'lcd-people'),
-                array('status' => 400)
-            );
-        }
-
-        // Redirect to the form-specific endpoint
-        $form_specific_request = new WP_REST_Request('POST', '/lcd-people/v1/forminator-webhook/' . $form_id);
-        $form_specific_request->set_body($request->get_body());
-        $form_specific_request->set_headers($request->get_headers());
-        
-        return $this->handle_forminator_webhook($form_specific_request);
-    }
 
     /**
      * Update person from Forminator data (selective updates for existing people)
@@ -3029,22 +2929,10 @@ class LCD_People {
     }
 
     /**
-     * Flush rewrite rules on plugin activation
-     */
-    public function flush_rewrite_rules_on_activation() {
-        // Register our REST endpoints
-        $this->register_rest_endpoint();
-        // Flush rewrite rules
-        flush_rewrite_rules();
-    }
-
-    /**
      * Clean up scheduled hooks on plugin deactivation
      */
     public static function deactivate() {
         wp_clear_scheduled_hook('lcd_check_membership_statuses');
-        // Also flush rewrite rules on deactivation
-        flush_rewrite_rules();
     }
 
     public function ajax_cancel_membership() {
