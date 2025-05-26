@@ -415,7 +415,7 @@ class LCD_People_Frontend {
             
             <?php if (!$has_person_record): ?>
                 <div class="lcd-volunteer-no-record">
-                    <p><em><?php _e('No volunteer record found. Please contact us to get involved!', 'lcd-people'); ?></em></p>
+                    <p><em><?php _e('No volunteer record found. <a href="'.get_bloginfo('url').'/volunteer">Sign up here</a> to get involved!', 'lcd-people'); ?></em></p>
                 </div>
             <?php else: ?>
                 <div class="lcd-volunteer-placeholder">
