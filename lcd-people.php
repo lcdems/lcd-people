@@ -1995,6 +1995,36 @@ class LCD_People {
 
             <hr>
 
+            <?php
+            // Display last webhook debug info if available
+            $debug_info = get_transient('lcd_people_last_webhook_debug');
+            if ($debug_info) {
+                ?>
+                <h2><?php _e('Last Webhook Activity', 'lcd-people'); ?></h2>
+                <div style="background: #f0f0f1; padding: 15px; border-left: 4px solid #646970;">
+                    <p><strong><?php _e('Timestamp:', 'lcd-people'); ?></strong> <?php echo esc_html($debug_info['timestamp']); ?></p>
+                    
+                    <h3><?php _e('Processing Steps:', 'lcd-people'); ?></h3>
+                    <ol>
+                        <?php foreach ($debug_info['steps'] as $step): ?>
+                            <li style="margin-bottom: 10px;">
+                                <strong><?php echo esc_html(ucfirst(str_replace('_', ' ', $step['step']))); ?>:</strong>
+                                <span style="color: <?php echo $step['status'] === 'success' ? '#00a32a' : '#d63638'; ?>">
+                                    <?php echo esc_html($step['message']); ?>
+                                </span>
+                            </li>
+                        <?php endforeach; ?>
+                    </ol>
+
+                    <details>
+                        <summary><?php _e('Raw Data Received', 'lcd-people'); ?></summary>
+                        <pre style="background: #fff; padding: 10px; overflow: auto;"><?php echo esc_html(print_r($debug_info['data_received'], true)); ?></pre>
+                    </details>
+                </div>
+                <?php
+            }
+            ?>
+
             <h2><?php _e('Integration Instructions', 'lcd-people'); ?></h2>
             <div style="background: #f9f9f9; padding: 15px; border-left: 4px solid #72aee6;">
                 <h3><?php _e('How to set up the integration:', 'lcd-people'); ?></h3>
@@ -2481,7 +2511,23 @@ class LCD_People {
         // Get the form data, trying both JSON and POST params
         $form_data = !empty($json_params) ? $json_params : $post_params;
         
+        // Store debug info
+        $debug_info = array(
+            'timestamp' => current_time('mysql'),
+            'data_received' => array(
+                'json_params' => $json_params,
+                'post_params' => $post_params
+            ),
+            'steps' => array()
+        );
+        
         if (empty($form_data)) {
+            $debug_info['steps'][] = array(
+                'step' => 'check_data',
+                'status' => 'error',
+                'message' => 'No form data received'
+            );
+            set_transient('lcd_people_last_webhook_debug', $debug_info, WEEK_IN_SECONDS);
             return new WP_Error(
                 'no_data',
                 __('No form data received', 'lcd-people'),
@@ -2492,6 +2538,12 @@ class LCD_People {
         // Get field mappings
         $mappings = get_option('lcd_people_forminator_volunteer_mappings', array());
         if (empty($mappings)) {
+            $debug_info['steps'][] = array(
+                'step' => 'check_mappings',
+                'status' => 'error',
+                'message' => 'No field mappings configured'
+            );
+            set_transient('lcd_people_last_webhook_debug', $debug_info, WEEK_IN_SECONDS);
             return new WP_Error(
                 'no_mappings',
                 __('No field mappings configured', 'lcd-people'),
@@ -2506,8 +2558,20 @@ class LCD_People {
                 $person_data[$person_field] = $form_data[$form_field];
             }
         }
+        
+        $debug_info['steps'][] = array(
+            'step' => 'map_fields',
+            'status' => 'success',
+            'message' => 'Mapped fields: ' . print_r($person_data, true)
+        );
 
         if (empty($person_data['email'])) {
+            $debug_info['steps'][] = array(
+                'step' => 'check_email',
+                'status' => 'error',
+                'message' => 'Email field is required'
+            );
+            set_transient('lcd_people_last_webhook_debug', $debug_info, WEEK_IN_SECONDS);
             return new WP_Error(
                 'no_email',
                 __('Email field is required', 'lcd-people'),
@@ -2523,15 +2587,38 @@ class LCD_People {
             $this->update_person_from_forminator($person->ID, $person_data);
             $this->add_sync_record($person->ID, 'Forminator', true, 'Person updated from volunteer form');
             $response_message = 'Person updated successfully';
+            $debug_info['steps'][] = array(
+                'step' => 'update_person',
+                'status' => 'success',
+                'message' => 'Updated person ID: ' . $person->ID
+            );
         } else {
             // Create new person
             $person_id = $this->create_person_from_forminator($person_data);
             if (is_wp_error($person_id)) {
+                $debug_info['steps'][] = array(
+                    'step' => 'create_person',
+                    'status' => 'error',
+                    'message' => $person_id->get_error_message()
+                );
+                set_transient('lcd_people_last_webhook_debug', $debug_info, WEEK_IN_SECONDS);
                 return $person_id;
             }
             $this->add_sync_record($person_id, 'Forminator', true, 'New person created from volunteer form');
             $response_message = 'New person created successfully';
+            $debug_info['steps'][] = array(
+                'step' => 'create_person',
+                'status' => 'success',
+                'message' => 'Created person ID: ' . $person_id
+            );
         }
+
+        $debug_info['steps'][] = array(
+            'step' => 'complete',
+            'status' => 'success',
+            'message' => $response_message
+        );
+        set_transient('lcd_people_last_webhook_debug', $debug_info, WEEK_IN_SECONDS);
 
         return array(
             'success' => true,
