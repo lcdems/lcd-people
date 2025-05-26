@@ -83,7 +83,9 @@ class LCD_People_Frontend {
      */
     public function enqueue_frontend_assets() {
         // Only load on profile pages
-        if (!is_page_template('template-member-profile.php') && !has_shortcode(get_post()->post_content, 'lcd_member_profile')) {
+        $current_post = get_post();
+        if (!is_page_template('template-member-profile.php') && 
+            (!$current_post || !has_shortcode($current_post->post_content, 'lcd_member_profile'))) {
             return;
         }
         

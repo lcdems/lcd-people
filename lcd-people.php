@@ -7,6 +7,9 @@
  * Author: LCD
  * License: GPL v2 or later
  * Text Domain: lcd-people
+ * 
+ * @phpstan-ignore-next-line
+ * External plugin classes (Forminator_API, Forminator_Form_Field_Model) are checked with class_exists()
  */
 
 if (!defined('ABSPATH')) {
@@ -1192,6 +1195,16 @@ class LCD_People {
             'lcd-people-sender-settings',
             array($this, 'render_sender_settings_page')
         );
+
+        // Forminator Integration Settings
+        add_submenu_page(
+            'edit.php?post_type=lcd_person',
+            __('Forminator Integration Settings', 'lcd-people'),
+            __('Forminator Settings', 'lcd-people'),
+            'manage_options',
+            'lcd-people-forminator-settings',
+            array($this, 'render_forminator_settings_page')
+        );
     }
 
     /**
@@ -1263,6 +1276,12 @@ class LCD_People {
             'default' => ''
         ));
 
+        register_setting('lcd_people_sender_settings', 'lcd_people_sender_new_volunteer_group', array(
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => ''
+        ));
+
         add_settings_section(
             'lcd_people_sender_section',
             __('Sender.net Integration Settings', 'lcd-people'),
@@ -1284,6 +1303,50 @@ class LCD_People {
             array($this, 'render_new_member_group_field'),
             'lcd-people-sender-settings',
             'lcd_people_sender_section'
+        );
+
+        add_settings_field(
+            'lcd_people_sender_new_volunteer_group',
+            __('New Volunteer Group ID', 'lcd-people'),
+            array($this, 'render_new_volunteer_group_field'),
+            'lcd-people-sender-settings',
+            'lcd_people_sender_section'
+        );
+
+        // Forminator settings
+        register_setting('lcd_people_forminator_settings', 'lcd_people_forminator_volunteer_form', array(
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => ''
+        ));
+
+        register_setting('lcd_people_forminator_settings', 'lcd_people_forminator_volunteer_mappings', array(
+            'type' => 'array',
+            'sanitize_callback' => array($this, 'sanitize_forminator_mappings'),
+            'default' => array()
+        ));
+
+        add_settings_section(
+            'lcd_people_forminator_volunteer_section',
+            __('Volunteer Form Integration', 'lcd-people'),
+            array($this, 'render_forminator_volunteer_section'),
+            'lcd-people-forminator-settings'
+        );
+
+        add_settings_field(
+            'lcd_people_forminator_volunteer_form',
+            __('Volunteer Sign-up Form', 'lcd-people'),
+            array($this, 'render_forminator_volunteer_form_field'),
+            'lcd-people-forminator-settings',
+            'lcd_people_forminator_volunteer_section'
+        );
+
+        add_settings_field(
+            'lcd_people_forminator_volunteer_mappings',
+            __('Field Mappings', 'lcd-people'),
+            array($this, 'render_forminator_volunteer_mappings_field'),
+            'lcd-people-forminator-settings',
+            'lcd_people_forminator_volunteer_section'
         );
     }
 
@@ -1399,6 +1462,269 @@ class LCD_People {
         <input type="text" name="lcd_people_sender_new_member_group" value="<?php echo esc_attr($group_id); ?>" class="regular-text">
         <p class="description"><?php _e('The Sender.net group ID to add new members to (e.g. dw2kEJ)', 'lcd-people'); ?></p>
         <?php
+    }
+
+    public function render_new_volunteer_group_field() {
+        $group_id = get_option('lcd_people_sender_new_volunteer_group');
+        ?>
+        <input type="text" name="lcd_people_sender_new_volunteer_group" value="<?php echo esc_attr($group_id); ?>" class="regular-text">
+        <p class="description"><?php _e('The Sender.net group ID to add new volunteers to (e.g. xY9mNp)', 'lcd-people'); ?></p>
+        <?php
+    }
+
+    public function sanitize_forminator_mappings($mappings) {
+        if (!is_array($mappings)) {
+            return array();
+        }
+        
+        $sanitized = array();
+        foreach ($mappings as $form_field => $person_field) {
+            $sanitized[sanitize_text_field($form_field)] = sanitize_text_field($person_field);
+        }
+        
+        return $sanitized;
+    }
+
+    public function render_forminator_volunteer_section() {
+        ?>
+        <p><?php _e('Configure integration with Forminator forms for volunteer sign-ups. Select a form and map its fields to person record fields.', 'lcd-people'); ?></p>
+        <?php
+    }
+
+    public function render_forminator_volunteer_form_field() {
+        $selected_form = get_option('lcd_people_forminator_volunteer_form');
+        $forms = $this->get_forminator_forms();
+        ?>
+        <select name="lcd_people_forminator_volunteer_form" id="forminator_volunteer_form">
+            <option value=""><?php _e('Select a form...', 'lcd-people'); ?></option>
+            <?php foreach ($forms as $form_id => $form_title): ?>
+                <option value="<?php echo esc_attr($form_id); ?>" <?php selected($selected_form, $form_id); ?>>
+                    <?php echo esc_html($form_title); ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+        <p class="description"><?php _e('Choose the Forminator form that will be used for volunteer sign-ups.', 'lcd-people'); ?></p>
+        
+        <?php if ($selected_form): ?>
+            <div id="webhook-info" style="margin-top: 15px; padding: 10px; background: #f0f0f1; border-left: 4px solid #72aee6;">
+                <h4><?php _e('Webhook URL', 'lcd-people'); ?></h4>
+                <p><?php _e('Configure your Forminator form to send webhooks to this URL:', 'lcd-people'); ?></p>
+                <code style="background: white; padding: 5px; display: block; margin: 5px 0;">
+                    <?php echo esc_url(rest_url('lcd-people/v1/forminator-webhook')); ?>
+                </code>
+                <p class="description">
+                    <?php _e('In your Forminator form settings, go to Integrations > Webhooks and add this URL.', 'lcd-people'); ?>
+                </p>
+            </div>
+        <?php endif; ?>
+        <?php
+    }
+
+    public function render_forminator_volunteer_mappings_field() {
+        $selected_form = get_option('lcd_people_forminator_volunteer_form');
+        $mappings = get_option('lcd_people_forminator_volunteer_mappings', array());
+        
+        if (empty($selected_form)) {
+            echo '<p class="description">' . __('Please select a form first to configure field mappings.', 'lcd-people') . '</p>';
+            return;
+        }
+
+        $form_fields = $this->get_forminator_form_fields($selected_form);
+        $person_fields = $this->get_person_field_options();
+
+        if (empty($form_fields)) {
+            echo '<p class="description">' . __('No fields found for the selected form.', 'lcd-people') . '</p>';
+            return;
+        }
+        ?>
+        <div id="field-mappings">
+            <table class="widefat">
+                <thead>
+                    <tr>
+                        <th><?php _e('Form Field', 'lcd-people'); ?></th>
+                        <th><?php _e('Maps to Person Field', 'lcd-people'); ?></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($form_fields as $field_id => $field_label): ?>
+                        <tr>
+                            <td>
+                                <strong><?php echo esc_html($field_label); ?></strong><br>
+                                <code><?php echo esc_html($field_id); ?></code>
+                            </td>
+                            <td>
+                                <select name="lcd_people_forminator_volunteer_mappings[<?php echo esc_attr($field_id); ?>]">
+                                    <option value=""><?php _e('-- Do not map --', 'lcd-people'); ?></option>
+                                    <?php foreach ($person_fields as $person_field => $person_label): ?>
+                                        <option value="<?php echo esc_attr($person_field); ?>" 
+                                                <?php selected(isset($mappings[$field_id]) ? $mappings[$field_id] : '', $person_field); ?>>
+                                            <?php echo esc_html($person_label); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        
+        <script type="text/javascript">
+            jQuery(document).ready(function($) {
+                $('#forminator_volunteer_form').change(function() {
+                    if ($(this).val()) {
+                        // Reload page to show mappings for selected form
+                        window.location.href = window.location.pathname + '?page=lcd-people-forminator-settings&form_selected=' + $(this).val();
+                    }
+                });
+            });
+        </script>
+        <?php
+    }
+
+    /**
+     * Get available Forminator forms
+     * 
+     * @return array Array of form_id => form_name pairs
+     */
+    private function get_forminator_forms() {
+        $forms = array();
+        
+        // Check if Forminator is active
+        if (!class_exists('Forminator_API')) {
+            return $forms;
+        }
+
+        try {
+            /** @var array|null $forminator_forms */
+            $forminator_forms = Forminator_API::get_forms(null, 1, 999); // Get up to 999 forms
+            
+            if (is_array($forminator_forms)) {
+                foreach ($forminator_forms as $form) {
+                    if (isset($form->id) && isset($form->settings['formName'])) {
+                        $forms[$form->id] = $form->settings['formName'];
+                    }
+                }
+            }
+        } catch (Exception $e) {
+            error_log('LCD People: Error getting Forminator forms: ' . $e->getMessage());
+        }
+
+        return $forms;
+    }
+
+    /**
+     * Get fields from a Forminator form
+     * 
+     * @param string $form_id The form ID
+     * @return array Array of field_id => field_label pairs
+     */
+    private function get_forminator_form_fields($form_id) {
+        $fields = array();
+        
+        if (!class_exists('Forminator_API')) {
+            return $fields;
+        }
+
+        try {
+            /** @var object|null $form */
+            $form = Forminator_API::get_form($form_id);
+            
+            if ($form && isset($form->fields)) {
+                foreach ($form->fields as $field) {
+                    // Check if field is a Forminator field object (avoiding instanceof for linter)
+                    if (is_object($field) && method_exists($field, 'get_field_label')) {
+                        // Get the field data from the Forminator field model
+                        $element_id = null;
+                        $field_label = null;
+                        
+                        // Try to get element_id from slug first, then from raw data
+                        if (isset($field->slug)) {
+                            $element_id = $field->slug;
+                        }
+                        
+                        // Try to get field label from raw data
+                        if (method_exists($field, 'get_field_label')) {
+                            $field_label = $field->get_field_label();
+                        } elseif (method_exists($field, 'get_raw')) {
+                            $raw_data = $field->get_raw();
+                            if (isset($raw_data['field_label'])) {
+                                $field_label = $raw_data['field_label'];
+                            }
+                        }
+                        
+                        // Fallback: try to access raw property directly (though it's protected)
+                        if (!$field_label) {
+                            try {
+                                $reflection = new ReflectionClass($field);
+                                $raw_property = $reflection->getProperty('raw');
+                                $raw_property->setAccessible(true);
+                                $raw_data = $raw_property->getValue($field);
+                                
+                                if (isset($raw_data['field_label'])) {
+                                    $field_label = $raw_data['field_label'];
+                                }
+                                if (!$element_id && isset($raw_data['element_id'])) {
+                                    $element_id = $raw_data['element_id'];
+                                }
+                            } catch (Exception $e) {
+                                // Reflection failed, continue with other methods
+                            }
+                        }
+                        
+                        // For name fields, handle sub-fields
+                        if ($element_id && $field_label) {
+                            $fields[$element_id] = $field_label;
+                            
+                            // For name fields, also add individual name components
+                            $raw_data = null;
+                            if (method_exists($field, 'get_raw')) {
+                                $raw_data = $field->get_raw();
+                            } else {
+                                // Fallback: try to access raw property directly using reflection
+                                try {
+                                    $reflection = new ReflectionClass($field);
+                                    $raw_property = $reflection->getProperty('raw');
+                                    $raw_property->setAccessible(true);
+                                    $raw_data = $raw_property->getValue($field);
+                                } catch (Exception $e) {
+                                    // Reflection failed
+                                }
+                            }
+                            
+                            if ($raw_data && isset($raw_data['type']) && $raw_data['type'] === 'name') {
+                                // Add first name and last name as separate options
+                                if (isset($raw_data['fname']) && $raw_data['fname']) {
+                                    $fields[$element_id . '-first-name'] = $field_label . ' (First Name)';
+                                }
+                                if (isset($raw_data['lname']) && $raw_data['lname']) {
+                                    $fields[$element_id . '-last-name'] = $field_label . ' (Last Name)';
+                                }
+                                if (isset($raw_data['mname']) && $raw_data['mname']) {
+                                    $fields[$element_id . '-middle-name'] = $field_label . ' (Middle Name)';
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception $e) {
+            error_log('LCD People: Error getting Forminator form fields: ' . $e->getMessage());
+        }
+
+        return $fields;
+    }
+
+    private function get_person_field_options() {
+        return array(
+            'first_name' => __('First Name', 'lcd-people'),
+            'last_name' => __('Last Name', 'lcd-people'),
+            'email' => __('Email', 'lcd-people'),
+            'phone' => __('Phone', 'lcd-people'),
+            'address' => __('Address', 'lcd-people'),
+            'role' => __('Role (will be added as taxonomy)', 'lcd-people'),
+            'precinct' => __('Precinct (will be added as taxonomy)', 'lcd-people'),
+        );
     }
 
     public function render_sender_settings_page() {
@@ -1644,6 +1970,61 @@ class LCD_People {
         }
     }
 
+    public function render_forminator_settings_page() {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+
+        // Check if Forminator is active
+        if (!class_exists('Forminator_API')) {
+            ?>
+            <div class="wrap">
+                <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
+                <div class="notice notice-error">
+                    <p><?php _e('Forminator plugin is required for this integration. Please install and activate Forminator.', 'lcd-people'); ?></p>
+                </div>
+            </div>
+            <?php
+            return;
+        }
+        ?>
+        <div class="wrap">
+            <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
+            
+            <?php settings_errors('lcd_people_forminator_settings'); ?>
+
+            <form action="options.php" method="post">
+                <?php
+                settings_fields('lcd_people_forminator_settings');
+                do_settings_sections('lcd-people-forminator-settings');
+                submit_button();
+                ?>
+            </form>
+
+            <hr>
+
+            <h2><?php _e('Integration Instructions', 'lcd-people'); ?></h2>
+            <div style="background: #f9f9f9; padding: 15px; border-left: 4px solid #72aee6;">
+                <h3><?php _e('How to set up the integration:', 'lcd-people'); ?></h3>
+                <ol>
+                    <li><?php _e('Select your volunteer sign-up form from the dropdown above', 'lcd-people'); ?></li>
+                    <li><?php _e('Map the form fields to the appropriate person record fields', 'lcd-people'); ?></li>
+                    <li><?php _e('Save the settings', 'lcd-people'); ?></li>
+                    <li><?php _e('Copy the webhook URL shown above and add it to your Forminator form:', 'lcd-people'); ?>
+                        <ul style="margin-top: 10px;">
+                            <li><?php _e('Go to your Forminator form editor', 'lcd-people'); ?></li>
+                            <li><?php _e('Navigate to Integrations > Webhooks', 'lcd-people'); ?></li>
+                            <li><?php _e('Add a new webhook with the URL provided above', 'lcd-people'); ?></li>
+                            <li><?php _e('Set the method to POST', 'lcd-people'); ?></li>
+                        </ul>
+                    </li>
+                </ol>
+                <p><strong><?php _e('Note:', 'lcd-people'); ?></strong> <?php _e('When someone submits the form, a new person record will be created with the "volunteer" role automatically assigned.', 'lcd-people'); ?></p>
+            </div>
+        </div>
+        <?php
+    }
+
     public function handle_person_sync($person_id) {
         $this->sync_person_to_sender($person_id);
     }
@@ -1688,6 +2069,12 @@ class LCD_People {
             'methods' => 'POST',
             'callback' => array($this, 'handle_actblue_webhook'),
             'permission_callback' => array($this, 'verify_webhook_auth')
+        ));
+
+        register_rest_route('lcd-people/v1', '/forminator-webhook', array(
+            'methods' => 'POST',
+            'callback' => array($this, 'handle_forminator_webhook'),
+            'permission_callback' => '__return_true' // Forminator doesn't support auth headers
         ));
     }
 
@@ -2080,6 +2467,408 @@ class LCD_People {
         do_action('lcd_person_actblue_created', $person_id, $donor, $contribution, $lineitem);
 
         return $person_id;
+    }
+
+    /**
+     * Handle Forminator webhook
+     */
+    public function handle_forminator_webhook($request) {
+        $params = $request->get_json_params();
+        
+        // If no JSON data, try form data
+        if (empty($params)) {
+            $params = $request->get_params();
+        }
+
+        // Get the configured form ID and mappings
+        $configured_form_id = get_option('lcd_people_forminator_volunteer_form');
+        $mappings = get_option('lcd_people_forminator_volunteer_mappings', array());
+
+        if (empty($configured_form_id)) {
+            return new WP_Error(
+                'no_form_configured',
+                __('No volunteer form configured.', 'lcd-people'),
+                array('status' => 400)
+            );
+        }
+
+        if (empty($mappings)) {
+            return new WP_Error(
+                'no_mappings_configured',
+                __('No field mappings configured.', 'lcd-people'),
+                array('status' => 400)
+            );
+        }
+
+        // Extract form ID from webhook data (Forminator includes this)
+        $form_id = isset($params['form_id']) ? $params['form_id'] : '';
+        
+        // Verify this is the correct form
+        if ($form_id !== $configured_form_id) {
+            return array(
+                'success' => true,
+                'message' => 'Ignored - not the configured volunteer form'
+            );
+        }
+
+        // Map form data to person fields
+        $person_data = array();
+        $role_data = '';
+        $precinct_data = '';
+
+        foreach ($mappings as $form_field => $person_field) {
+            if (empty($person_field)) {
+                continue;
+            }
+
+            $value = null;
+
+            // Handle special name field mappings (e.g., name-1-first-name)
+            if (strpos($form_field, '-first-name') !== false) {
+                // Extract the base field name (e.g., name-1 from name-1-first-name)
+                $base_field = str_replace('-first-name', '', $form_field);
+                // Look for the first name in Forminator's name field format
+                if (isset($params[$base_field . '-first-name'])) {
+                    $value = sanitize_text_field($params[$base_field . '-first-name']);
+                }
+            } elseif (strpos($form_field, '-last-name') !== false) {
+                // Extract the base field name (e.g., name-1 from name-1-last-name)
+                $base_field = str_replace('-last-name', '', $form_field);
+                // Look for the last name in Forminator's name field format
+                if (isset($params[$base_field . '-last-name'])) {
+                    $value = sanitize_text_field($params[$base_field . '-last-name']);
+                }
+            } elseif (strpos($form_field, '-middle-name') !== false) {
+                // Extract the base field name (e.g., name-1 from name-1-middle-name)
+                $base_field = str_replace('-middle-name', '', $form_field);
+                // Look for the middle name in Forminator's name field format
+                if (isset($params[$base_field . '-middle-name'])) {
+                    $value = sanitize_text_field($params[$base_field . '-middle-name']);
+                }
+            } elseif (isset($params[$form_field])) {
+                // Regular field mapping
+                $value = sanitize_text_field($params[$form_field]);
+            }
+
+            if ($value !== null) {
+                if ($person_field === 'role') {
+                    $role_data = $value;
+                } elseif ($person_field === 'precinct') {
+                    $precinct_data = $value;
+                } else {
+                    $person_data[$person_field] = $value;
+                }
+            }
+        }
+
+        // Validate required fields
+        if (empty($person_data['first_name']) || empty($person_data['last_name'])) {
+            return new WP_Error(
+                'missing_required_fields',
+                __('First name and last name are required.', 'lcd-people'),
+                array('status' => 400)
+            );
+        }
+
+        // Check if person already exists by email and name
+        $existing_person = null;
+        if (!empty($person_data['email'])) {
+            $existing_person = $this->get_person_by_email(
+                $person_data['email'], 
+                $person_data['first_name'], 
+                $person_data['last_name']
+            );
+        }
+
+        if ($existing_person) {
+            // Update existing person
+            $person_id = $existing_person->ID;
+            $this->update_person_from_forminator($person_id, $person_data, $role_data, $precinct_data);
+            $response_message = 'Existing person updated with volunteer information';
+        } else {
+            // Create new person
+            $person_id = $this->create_person_from_forminator($person_data, $role_data, $precinct_data);
+            if (is_wp_error($person_id)) {
+                return $person_id;
+            }
+            $response_message = 'New volunteer person created successfully';
+        }
+
+        $this->add_sync_record($person_id, 'Forminator Webhook', true, $response_message);
+
+        return array(
+            'success' => true,
+            'message' => $response_message,
+            'person_id' => $person_id
+        );
+    }
+
+    /**
+     * Update person from Forminator data (selective updates for existing people)
+     */
+    private function update_person_from_forminator($person_id, $person_data, $role_data = '', $precinct_data = '') {
+        // For existing people, only update fields that are empty or if the new data is more complete
+        $fields_to_update = array();
+        
+        foreach ($person_data as $field => $value) {
+            if (!empty($value)) {
+                $current_value = get_post_meta($person_id, '_lcd_person_' . $field, true);
+                
+                // Update if current field is empty, or if it's contact info that might have changed
+                if (empty($current_value) || in_array($field, array('phone', 'address'))) {
+                    $fields_to_update[$field] = $value;
+                }
+            }
+        }
+        
+        // Apply the selective updates
+        foreach ($fields_to_update as $field => $value) {
+            update_post_meta($person_id, '_lcd_person_' . $field, $value);
+        }
+
+        // Add volunteer role if not already present (this method now checks for duplicates)
+        $this->add_volunteer_role($person_id, $role_data);
+        
+        // Add precinct if provided (only if they don't already have one)
+        if (!empty($precinct_data)) {
+            $current_precincts = wp_get_post_terms($person_id, 'lcd_precinct', array('fields' => 'slugs'));
+            if (is_wp_error($current_precincts)) {
+                $current_precincts = array();
+            }
+            
+            if (empty($current_precincts)) {
+                wp_set_post_terms($person_id, array($precinct_data), 'lcd_precinct', false);
+            }
+        }
+
+        // Update post title only if name fields were actually updated
+        if (isset($fields_to_update['first_name']) || isset($fields_to_update['last_name'])) {
+            $first_name = get_post_meta($person_id, '_lcd_person_first_name', true);
+            $last_name = get_post_meta($person_id, '_lcd_person_last_name', true);
+            
+            if (!empty($first_name) && !empty($last_name)) {
+                wp_update_post(array(
+                    'ID' => $person_id,
+                    'post_title' => $first_name . ' ' . $last_name
+                ));
+            }
+        }
+
+        // Handle Primary Status (Automatic Assignment) - only if email was updated
+        if (isset($fields_to_update['email'])) {
+            $this->update_primary_status($person_id, $fields_to_update['email']);
+        }
+
+        // Sync to Sender.net with volunteer group (this will add volunteer group if not already present)
+        $this->sync_volunteer_to_sender($person_id);
+    }
+
+    /**
+     * Create person from Forminator data
+     */
+    private function create_person_from_forminator($person_data, $role_data = '', $precinct_data = '') {
+        // Create post
+        $post_data = array(
+            'post_title'  => $person_data['first_name'] . ' ' . $person_data['last_name'],
+            'post_type'   => 'lcd_person',
+            'post_status' => 'publish'
+        );
+
+        $person_id = wp_insert_post($post_data);
+
+        if (is_wp_error($person_id)) {
+            return $person_id;
+        }
+
+        // Set meta data
+        foreach ($person_data as $field => $value) {
+            if (!empty($value)) {
+                update_post_meta($person_id, '_lcd_person_' . $field, $value);
+            }
+        }
+
+        // Add volunteer role
+        $this->add_volunteer_role($person_id, $role_data);
+        
+        // Add precinct if provided
+        if (!empty($precinct_data)) {
+            wp_set_post_terms($person_id, array($precinct_data), 'lcd_precinct', false);
+        }
+
+        // Handle Primary Status (Automatic Assignment)
+        if (!empty($person_data['email'])) {
+            $this->update_primary_status($person_id, $person_data['email']);
+        }
+
+        // Sync to Sender.net with volunteer group
+        $this->sync_volunteer_to_sender($person_id);
+
+        return $person_id;
+    }
+
+    /**
+     * Add volunteer role to person (only if not already present)
+     */
+    private function add_volunteer_role($person_id, $additional_role = '') {
+        // Get current roles
+        $current_roles = wp_get_post_terms($person_id, 'lcd_role', array('fields' => 'slugs'));
+        if (is_wp_error($current_roles)) {
+            $current_roles = array();
+        }
+
+        $roles_to_add = array();
+        
+        // Add volunteer role if not already present
+        if (!in_array('volunteer', $current_roles)) {
+            $roles_to_add[] = 'volunteer';
+        }
+        
+        // Add additional role if provided and not already present
+        if (!empty($additional_role) && !in_array($additional_role, $current_roles)) {
+            $roles_to_add[] = $additional_role;
+        }
+        
+        // Only add roles if there are new ones to add
+        if (!empty($roles_to_add)) {
+            wp_set_post_terms($person_id, $roles_to_add, 'lcd_role', true); // true = append to existing
+        }
+    }
+
+    /**
+     * Update primary status for a person with given email
+     */
+    private function update_primary_status($person_id, $email) {
+        // Find if another primary person exists with this email
+        $args = array(
+            'post_type' => 'lcd_person',
+            'posts_per_page' => 1,
+            'fields' => 'ids',
+            'post_status' => 'publish',
+            'post__not_in' => array($person_id),
+            'meta_query' => array(
+                'relation' => 'AND',
+                array(
+                    'key' => '_lcd_person_email',
+                    'value' => $email,
+                    'compare' => '='
+                ),
+                array(
+                    'key' => '_lcd_person_is_primary',
+                    'value' => '1',
+                    'compare' => '='
+                )
+            )
+        );
+        $existing_primary_query = new WP_Query($args);
+        $existing_primary_id = $existing_primary_query->posts ? $existing_primary_query->posts[0] : false;
+
+        if ($existing_primary_id) {
+            // Another primary exists - this person becomes secondary
+            update_post_meta($person_id, '_lcd_person_is_primary', '0');
+            update_post_meta($person_id, '_lcd_person_actual_primary_id', $existing_primary_id);
+        } else {
+            // No other primary - this person becomes primary
+            update_post_meta($person_id, '_lcd_person_is_primary', '1');
+            delete_post_meta($person_id, '_lcd_person_actual_primary_id');
+        }
+    }
+
+    /**
+     * Sync volunteer to Sender.net with volunteer group
+     */
+    private function sync_volunteer_to_sender($person_id) {
+        // Check if primary member
+        $is_primary = get_post_meta($person_id, '_lcd_person_is_primary', true);
+        if ($is_primary !== '1') {
+            $this->add_sync_record($person_id, 'Sender.net', false, 'Sync skipped: Not the primary member for this email.');
+            return false;
+        }
+
+        $token = get_option('lcd_people_sender_token');
+        $volunteer_group_id = get_option('lcd_people_sender_new_volunteer_group');
+        
+        if (empty($token) || empty($volunteer_group_id)) {
+            $this->add_sync_record($person_id, 'Sender.net', false, 'Volunteer sync skipped: Missing API token or volunteer group ID');
+            return false;
+        }
+
+        $email = get_post_meta($person_id, '_lcd_person_email', true);
+        if (empty($email)) {
+            $this->add_sync_record($person_id, 'Sender.net', false, 'No email address found');
+            return false;
+        }
+
+        // Get existing subscriber to preserve their groups
+        $existing_groups = array();
+        $response = wp_remote_get('https://api.sender.net/v2/subscribers/' . urlencode($email), array(
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Accept' => 'application/json'
+            )
+        ));
+
+        if (!is_wp_error($response) && wp_remote_retrieve_response_code($response) === 200) {
+            $body = json_decode(wp_remote_retrieve_body($response), true);
+            if (isset($body['data']['subscriber_tags'])) {
+                foreach ($body['data']['subscriber_tags'] as $tag) {
+                    $existing_groups[] = $tag['id'];
+                }
+            }
+        }
+
+        // Add volunteer group if not already present
+        if (!in_array($volunteer_group_id, $existing_groups)) {
+            $existing_groups[] = $volunteer_group_id;
+        }
+
+        $subscriber_data = array(
+            'email' => $email,
+            'firstname' => get_post_meta($person_id, '_lcd_person_first_name', true),
+            'lastname' => get_post_meta($person_id, '_lcd_person_last_name', true),
+            'groups' => $existing_groups,
+            'trigger_automation' => true,
+            'trigger_groups' => true
+        );
+
+        // Add phone if available
+        $phone = get_post_meta($person_id, '_lcd_person_phone', true);
+        if (!empty($phone)) {
+            // Format phone number
+            $phone = preg_replace('/[^0-9]/', '', $phone);
+            if (strlen($phone) === 10) {
+                $phone = '+1' . $phone;
+            } elseif (strlen($phone) === 11 && $phone[0] === '1') {
+                $phone = '+' . $phone;
+            }
+            $subscriber_data['phone'] = $phone;
+        }
+
+        // Update or create subscriber
+        $response = wp_remote_request('https://api.sender.net/v2/subscribers/' . urlencode($email), array(
+            'method' => 'PATCH',
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Content-Type' => 'application/json',
+                'Accept' => 'application/json'
+            ),
+            'body' => json_encode($subscriber_data)
+        ));
+
+        if (is_wp_error($response)) {
+            $this->add_sync_record($person_id, 'Sender.net', false, 'Volunteer sync failed: ' . $response->get_error_message());
+            return false;
+        }
+
+        $status = wp_remote_retrieve_response_code($response);
+        if ($status === 200 || $status === 201) {
+            $this->add_sync_record($person_id, 'Sender.net', true, 'Volunteer synced successfully');
+            return true;
+        } else {
+            $body = json_decode(wp_remote_retrieve_body($response), true);
+            $message = isset($body['message']) ? $body['message'] : 'Unknown error';
+            $this->add_sync_record($person_id, 'Sender.net', false, 'Volunteer sync failed. Status: ' . $status . ', Message: ' . $message);
+            return false;
+        }
     }
 
     /**
