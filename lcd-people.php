@@ -2551,9 +2551,28 @@ class LCD_People {
             );
         }
 
+        // Debug log the mappings
+        $debug_info['steps'][] = array(
+            'step' => 'mappings_config',
+            'status' => 'info',
+            'message' => 'Field mappings: ' . print_r($mappings, true)
+        );
+
         // Map form data to person data
         $person_data = array();
         foreach ($mappings as $form_field => $person_field) {
+            // Debug log each field mapping attempt
+            $debug_info['steps'][] = array(
+                'step' => 'field_mapping',
+                'status' => 'info',
+                'message' => sprintf(
+                    'Mapping form field "%s" to person field "%s". Form value: %s',
+                    $form_field,
+                    $person_field,
+                    isset($form_data[$form_field]) ? print_r($form_data[$form_field], true) : 'not set'
+                )
+            );
+            
             if (!empty($form_data[$form_field])) {
                 $person_data[$person_field] = $form_data[$form_field];
             }
@@ -2562,7 +2581,7 @@ class LCD_People {
         $debug_info['steps'][] = array(
             'step' => 'map_fields',
             'status' => 'success',
-            'message' => 'Mapped fields: ' . print_r($person_data, true)
+            'message' => 'Final mapped fields: ' . print_r($person_data, true)
         );
 
         if (empty($person_data['email'])) {
