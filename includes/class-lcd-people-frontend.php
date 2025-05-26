@@ -454,42 +454,42 @@ class LCD_People_Frontend {
                 
                 <!-- Volunteer Interest Form Data -->
                 <div class="lcd-volunteer-interests">
-                    <h4><?php _e('Volunteer Interests', 'lcd-people'); ?></h4>
-                    <?php if ($volunteer_submission_data): ?>
-                        <div class="lcd-volunteer-submission-info">
-                            <p class="submission-date">
-                                <strong><?php _e('Last updated:', 'lcd-people'); ?></strong>
-                                <?php echo esc_html($volunteer_submission_data['date_created']); ?>
-                            </p>
-                            <?php if (!empty($volunteer_submission_data['form_name'])): ?>
-                                <p class="form-name">
-                                    <strong><?php _e('Form:', 'lcd-people'); ?></strong>
-                                    <?php echo esc_html($volunteer_submission_data['form_name']); ?>
+                    <div class="lcd-volunteer-interests-header" role="button" tabindex="0" aria-expanded="false" aria-controls="volunteer-interests-content">
+                        <h4><?php _e('Volunteer Interests', 'lcd-people'); ?></h4>
+                        <span class="lcd-toggle-icon" aria-hidden="true">▼</span>
+                    </div>
+                    <div class="lcd-volunteer-interests-content" id="volunteer-interests-content" style="display: none;">
+                        <?php if ($volunteer_submission_data): ?>
+                            <div class="lcd-volunteer-submission-info">
+                                <p class="submission-date">
+                                    <strong><?php _e('Last updated:', 'lcd-people'); ?></strong>
+                                    <?php echo esc_html($volunteer_submission_data['date_created']); ?>
                                 </p>
+                                
+                            </div>
+                            
+                            <?php if (!empty($volunteer_submission_data['fields'])): ?>
+                                <div class="lcd-volunteer-interests-data">
+                                    <?php foreach ($volunteer_submission_data['fields'] as $field_name => $field_value): ?>
+                                        <div class="volunteer-interest-item">
+                                            <strong><?php echo esc_html($field_name); ?>:</strong>
+                                            <span><?php echo esc_html($field_value); ?></span>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
                             <?php endif; ?>
-                        </div>
-                        
-                        <?php if (!empty($volunteer_submission_data['fields'])): ?>
-                            <div class="lcd-volunteer-interests-data">
-                                <?php foreach ($volunteer_submission_data['fields'] as $field_name => $field_value): ?>
-                                    <div class="volunteer-interest-item">
-                                        <strong><?php echo esc_html($field_name); ?>:</strong>
-                                        <span><?php echo esc_html($field_value); ?></span>
-                                    </div>
-                                <?php endforeach; ?>
+                        <?php else: ?>
+                            <div class="lcd-volunteer-no-interests">
+                                <p><?php _e('No volunteer interests on file.', 'lcd-people'); ?></p>
+                                <p>
+                                    <a href="<?php echo get_bloginfo('url'); ?>/volunteer" class="lcd-volunteer-signup-link">
+                                        <?php _e('Fill out our volunteer interest form', 'lcd-people'); ?>
+                                    </a> 
+                                    <?php _e('to let us know how you\'d like to help!', 'lcd-people'); ?>
+                                </p>
                             </div>
                         <?php endif; ?>
-                    <?php else: ?>
-                        <div class="lcd-volunteer-no-interests">
-                            <p><?php _e('No volunteer interests on file.', 'lcd-people'); ?></p>
-                            <p>
-                                <a href="<?php echo get_bloginfo('url'); ?>/volunteer" class="lcd-volunteer-signup-link">
-                                    <?php _e('Fill out our volunteer interest form', 'lcd-people'); ?>
-                                </a> 
-                                <?php _e('to let us know how you\'d like to help!', 'lcd-people'); ?>
-                            </p>
-                        </div>
-                    <?php endif; ?>
+                    </div>
                 </div>
                 
                 <!-- Upcoming Volunteer Shifts -->
@@ -756,8 +756,9 @@ class LCD_People_Frontend {
                 }
             }
 
-            // Get field labels from the form definition
+            // Get field labels and visibility from the form definition
             $field_labels = array();
+            $visible_fields = array();
             if (class_exists('Forminator_API')) {
                 try {
                     $form_fields = Forminator_API::get_form_fields($entry->form_id);
@@ -783,20 +784,35 @@ class LCD_People_Frontend {
                             
                             $field_id = isset($field_data['element_id']) ? $field_data['element_id'] : '';
                             $field_label = isset($field_data['field_label']) ? $field_data['field_label'] : '';
+                            $field_type = isset($field_data['type']) ? $field_data['type'] : '';
+                            
+                            // Skip hidden fields and internal fields
+                            if ($field_type === 'hidden' || 
+                                (isset($field_data['visibility']) && $field_data['visibility'] === 'hidden') ||
+                                $this->is_internal_field($field_id, $field_type)) {
+                                continue;
+                            }
                             
                             if ($field_id && $field_label) {
                                 $field_labels[$field_id] = $field_label;
+                                $visible_fields[$field_id] = true;
                                 
                                 // Handle name field sub-components
-                                if (isset($field_data['type']) && $field_data['type'] === 'name') {
+                                if ($field_type === 'name') {
                                     if (isset($field_data['fname']) && $field_data['fname']) {
-                                        $field_labels[$field_id . '-first-name'] = isset($field_data['fname_label']) ? $field_data['fname_label'] : $field_label . ' (First Name)';
+                                        $fname_id = $field_id . '-first-name';
+                                        $field_labels[$fname_id] = isset($field_data['fname_label']) ? $field_data['fname_label'] : $field_label . ' (First Name)';
+                                        $visible_fields[$fname_id] = true;
                                     }
                                     if (isset($field_data['lname']) && $field_data['lname']) {
-                                        $field_labels[$field_id . '-last-name'] = isset($field_data['lname_label']) ? $field_data['lname_label'] : $field_label . ' (Last Name)';
+                                        $lname_id = $field_id . '-last-name';
+                                        $field_labels[$lname_id] = isset($field_data['lname_label']) ? $field_data['lname_label'] : $field_label . ' (Last Name)';
+                                        $visible_fields[$lname_id] = true;
                                     }
                                     if (isset($field_data['mname']) && $field_data['mname']) {
-                                        $field_labels[$field_id . '-middle-name'] = isset($field_data['mname_label']) ? $field_data['mname_label'] : $field_label . ' (Middle Name)';
+                                        $mname_id = $field_id . '-middle-name';
+                                        $field_labels[$mname_id] = isset($field_data['mname_label']) ? $field_data['mname_label'] : $field_label . ' (Middle Name)';
+                                        $visible_fields[$mname_id] = true;
                                     }
                                 }
                             }
@@ -866,12 +882,30 @@ class LCD_People_Frontend {
                         }
                     }
                     
+                    // Skip fields that are not visible or are internal
+                    // If we have form field data, only show fields that are explicitly marked as visible
+                    // Otherwise, fall back to checking if the field is internal
+                    if (!empty($visible_fields)) {
+                        // We have form field data, so only show fields that are marked as visible
+                        if (!isset($visible_fields[$meta->meta_key])) {
+                            continue;
+                        }
+                    } else {
+                        // No form field data available, fall back to internal field check
+                        if ($this->is_internal_field($meta->meta_key)) {
+                            continue;
+                        }
+                    }
+                    
                     // Get field label - first try from form definition, then fallback
                     $field_label = '';
                     if (isset($field_labels[$meta->meta_key])) {
                         $field_label = $field_labels[$meta->meta_key];
                     } else {
-                        $field_label = $this->convert_forminator_field_key_to_label($meta->meta_key);
+                        // Only convert to label if it's not an internal field
+                        if (!$this->is_internal_field($meta->meta_key)) {
+                            $field_label = $this->convert_forminator_field_key_to_label($meta->meta_key);
+                        }
                     }
                     
                     if (!empty($field_value) && !empty($field_label)) {
@@ -887,6 +921,79 @@ class LCD_People_Frontend {
             error_log('LCD People Frontend: Error fetching Forminator submission data: ' . $e->getMessage());
             return false;
         }
+    }
+    
+    /**
+     * Check if a field is internal/hidden and should not be displayed
+     */
+    private function is_internal_field($field_key, $field_type = '') {
+        // List of internal field patterns that should be hidden
+        $internal_patterns = array(
+            '/^_/',                           // Fields starting with underscore
+            '/^entry_id$/',                   // Entry ID
+            '/^form_id$/',                    // Form ID
+            '/^date_created$/',               // Date created
+            '/^date_updated$/',               // Date updated
+            '/^ip$/',                         // IP address
+            '/^user_agent$/',                 // User agent
+            '/^referer$/',                    // Referer
+            '/^submission_id$/',              // Submission ID
+            '/^forminator_/',                 // Forminator internal fields
+            '/^_forminator_/',                // Forminator internal fields with underscore
+            '/^honeypot/',                    // Honeypot fields
+            '/^captcha/',                     // Captcha fields
+            '/^recaptcha/',                   // reCAPTCHA fields
+            '/^hcaptcha/',                    // hCaptcha fields
+            '/^csrf/',                        // CSRF tokens
+            '/^nonce/',                       // Nonce fields
+            '/^token/',                       // Token fields
+            '/^_wp_/',                        // WordPress internal fields
+            '/^wp_/',                         // WordPress fields
+            '/^admin_/',                      // Admin fields
+            '/^debug_/',                      // Debug fields
+            '/^test_/',                       // Test fields
+            '/^temp_/',                       // Temporary fields
+            '/^tmp_/',                        // Temporary fields
+            '/^system_/',                     // System fields
+            '/^internal_/',                   // Internal fields
+            '/^meta_/',                       // Meta fields
+            '/^tracking_/',                   // Tracking fields
+            '/^analytics_/',                  // Analytics fields
+            '/^utm_/',                        // UTM parameters
+            '/^gclid$/',                      // Google Click ID
+            '/^fbclid$/',                     // Facebook Click ID
+            '/^source$/',                     // Source tracking
+            '/^medium$/',                     // Medium tracking
+            '/^campaign$/',                   // Campaign tracking
+            '/^referrer$/',                   // Referrer tracking
+            '/^landing_page$/',               // Landing page tracking
+            '/^session_/',                    // Session data
+            '/^browser_/',                    // Browser data
+            '/^device_/',                     // Device data
+            '/^location_/',                   // Location data
+            '/^timestamp$/',                  // Timestamp fields
+            '/^created_at$/',                 // Created timestamp
+            '/^updated_at$/',                 // Updated timestamp
+            '/^status$/',                     // Status fields (unless specifically visible)
+            '/^workflow_/',                   // Workflow fields
+            '/^automation_/',                 // Automation fields
+            '/^hidden-\d+$/',                 // Forminator hidden fields pattern
+            '/^field-\d+-hidden$/',           // Alternative hidden field pattern
+        );
+        
+        // Check field type
+        if ($field_type === 'hidden' || $field_type === 'captcha' || $field_type === 'honeypot') {
+            return true;
+        }
+        
+        // Check field key against patterns
+        foreach ($internal_patterns as $pattern) {
+            if (preg_match($pattern, $field_key)) {
+                return true;
+            }
+        }
+        
+        return false;
     }
     
     /**
