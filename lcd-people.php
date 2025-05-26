@@ -1687,13 +1687,13 @@ class LCD_People {
                             if ($raw_data && isset($raw_data['type']) && $raw_data['type'] === 'name') {
                                 // Add first name and last name as separate options
                                 if (isset($raw_data['fname']) && $raw_data['fname']) {
-                                    $fields[$element_id . '-first-name'] = $field_label . ' (First Name)';
+                                    $fields[$element_id . '_first_name'] = $field_label . ' (First Name)';
                                 }
                                 if (isset($raw_data['lname']) && $raw_data['lname']) {
-                                    $fields[$element_id . '-last-name'] = $field_label . ' (Last Name)';
+                                    $fields[$element_id . '_last_name'] = $field_label . ' (Last Name)';
                                 }
                                 if (isset($raw_data['mname']) && $raw_data['mname']) {
-                                    $fields[$element_id . '-middle-name'] = $field_label . ' (Middle Name)';
+                                    $fields[$element_id . '_middle_name'] = $field_label . ' (Middle Name)';
                                 }
                             }
                         }
@@ -2561,6 +2561,9 @@ class LCD_People {
         // Map form data to person data
         $person_data = array();
         foreach ($mappings as $form_field => $person_field) {
+            // Convert underscores to hyphens for field lookup
+            $form_field_underscore = str_replace('-', '_', $form_field);
+            
             // Debug log each field mapping attempt
             $debug_info['steps'][] = array(
                 'step' => 'field_mapping',
@@ -2569,12 +2572,12 @@ class LCD_People {
                     'Mapping form field "%s" to person field "%s". Form value: %s',
                     $form_field,
                     $person_field,
-                    isset($form_data[$form_field]) ? print_r($form_data[$form_field], true) : 'not set'
+                    isset($form_data[$form_field_underscore]) ? print_r($form_data[$form_field_underscore], true) : 'not set'
                 )
             );
             
-            if (!empty($form_data[$form_field])) {
-                $person_data[$person_field] = $form_data[$form_field];
+            if (!empty($form_data[$form_field_underscore])) {
+                $person_data[$person_field] = $form_data[$form_field_underscore];
             }
         }
         
