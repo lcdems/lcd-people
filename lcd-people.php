@@ -1507,7 +1507,7 @@ class LCD_People {
                 <h4><?php _e('Webhook URL', 'lcd-people'); ?></h4>
                 <p><?php _e('Configure your Forminator form to send webhooks to this form-specific URL:', 'lcd-people'); ?></p>
                 <code style="background: white; padding: 5px; display: block; margin: 5px 0;">
-                    <?php echo esc_url(rest_url('volunteer-form-' . $selected_form . '/v1/')); ?>
+                    <?php echo esc_url(rest_url('volunteer-form-' . $selected_form . '/v1/submit')); ?>
                 </code>
                 <p class="description">
                     <?php _e('In your Forminator form settings, go to Integrations > Webhooks and add this URL. This URL is specific to the selected form for security.', 'lcd-people'); ?>
@@ -2064,10 +2064,26 @@ class LCD_People {
         if (!empty($configured_form_id)) {
             // Create a unique namespace for this specific form
             $form_namespace = 'volunteer-form-' . $configured_form_id;
-            register_rest_route($form_namespace . '/v1', '/', array(
-                'methods' => array('GET', 'POST'),
-                'callback' => array($this, 'handle_forminator_webhook'),
-                'permission_callback' => '__return_true' // Forminator doesn't support auth headers
+            register_rest_route($form_namespace . '/v1', '/submit', array(
+                array(
+                    'methods' => array('POST'),
+                    'callback' => array($this, 'handle_forminator_webhook'),
+                    'permission_callback' => '__return_true', // Forminator doesn't support auth headers
+                    'args' => array(),
+                    'show_in_index' => false // Hide from API discovery
+                ),
+                array(
+                    'methods' => array('GET'),
+                    'callback' => function() {
+                        return new WP_Error(
+                            'invalid_method',
+                            __('This endpoint only accepts POST requests from Forminator webhooks.', 'lcd-people'),
+                            array('status' => 405)
+                        );
+                    },
+                    'permission_callback' => '__return_true',
+                    'show_in_index' => false
+                )
             ));
         }
     }
@@ -2464,27 +2480,9 @@ class LCD_People {
     }
 
     /**
-     * Extract form ID from the request route
-     */
-    private function extract_form_id_from_route($route) {
-        preg_match('/volunteer-form-([^\/]+)\/v1/', $route, $matches);
-        return isset($matches[1]) ? $matches[1] : '';
-    }
-
-    /**
      * Handle Forminator webhook
      */
     public function handle_forminator_webhook($request) {
-        // Handle GET requests (for testing/validation)
-        if ($request->get_method() === 'GET') {
-            return new WP_REST_Response(array(
-                'success' => true,
-                'message' => 'LCD People Forminator webhook endpoint is ready',
-                'methods' => array('GET', 'POST'),
-                'form_id' => $this->extract_form_id_from_route($request->get_route())
-            ), 200);
-        }
-
         $params = $request->get_json_params();
         
         // If no JSON data, try form data
@@ -2493,7 +2491,9 @@ class LCD_People {
         }
 
         // Extract form ID from the request route (namespace)
-        $url_form_id = $this->extract_form_id_from_route($request->get_route());
+        $route = $request->get_route();
+        preg_match('/volunteer-form-([^\/]+)\/v1/', $route, $matches);
+        $url_form_id = isset($matches[1]) ? $matches[1] : '';
         
         // Get the configured form ID and mappings
         $configured_form_id = get_option('lcd_people_forminator_volunteer_form');
@@ -2608,11 +2608,11 @@ class LCD_People {
 
         $this->add_sync_record($person_id, 'Forminator Webhook', true, $response_message);
 
-        return new WP_REST_Response(array(
+        return array(
             'success' => true,
             'message' => $response_message,
             'person_id' => $person_id
-        ), 200);
+        );
     }
 
 
