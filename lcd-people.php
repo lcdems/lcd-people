@@ -3659,9 +3659,8 @@ function lcd_people_init() {
     LCD_People_Frontend_Init();
 }
 
-// Hook into WordPress as early as possible
+// Hook into WordPress early
 add_action('init', 'lcd_people_init', 0);
-add_action('rest_api_init', 'lcd_people_init', 0);
 
 // Register deactivation hook
 register_deactivation_hook(__FILE__, array('LCD_People', 'deactivate')); 
