@@ -2490,14 +2490,24 @@ class LCD_People {
             $params = $request->get_params();
         }
 
+        // Debug logging
+        error_log('LCD People: Forminator webhook received');
+        error_log('LCD People: Route = ' . $request->get_route());
+        error_log('LCD People: Params = ' . print_r($params, true));
+
         // Extract form ID from the request route (namespace)
         $route = $request->get_route();
-        preg_match('/volunteer-form-([^\/]+)\/v1/', $route, $matches);
+        preg_match('/volunteer-form-([^\/]+)\/v1\/submit/', $route, $matches);
         $url_form_id = isset($matches[1]) ? $matches[1] : '';
+        
+        error_log('LCD People: Extracted form ID = ' . $url_form_id);
         
         // Get the configured form ID and mappings
         $configured_form_id = get_option('lcd_people_forminator_volunteer_form');
         $mappings = get_option('lcd_people_forminator_volunteer_mappings', array());
+
+        error_log('LCD People: Configured form ID = ' . $configured_form_id);
+        error_log('LCD People: Mappings = ' . print_r($mappings, true));
 
         if (empty($configured_form_id)) {
             return new WP_Error(
