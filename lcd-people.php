@@ -3346,7 +3346,34 @@ class LCD_People {
                             $field_value = $field_value['value'];
                         }
                         if (is_array($field_value)) {
-                            $field_value = implode(', ', $field_value);
+                            // Convert array elements to strings, handling objects
+                            $string_values = array();
+                            foreach ($field_value as $value) {
+                                if (is_object($value)) {
+                                    // Convert object to string representation
+                                    if (isset($value->value)) {
+                                        $string_values[] = $value->value;
+                                    } elseif (isset($value->label)) {
+                                        $string_values[] = $value->label;
+                                    } else {
+                                        $string_values[] = json_encode($value);
+                                    }
+                                } elseif (is_array($value)) {
+                                    $string_values[] = implode(' ', $value);
+                                } else {
+                                    $string_values[] = (string) $value;
+                                }
+                            }
+                            $field_value = implode(', ', $string_values);
+                        }
+                    } elseif (is_object($field_value)) {
+                        // Handle object values
+                        if (isset($field_value->value)) {
+                            $field_value = $field_value->value;
+                        } elseif (isset($field_value->label)) {
+                            $field_value = $field_value->label;
+                        } else {
+                            $field_value = json_encode($field_value);
                         }
                     }
                     
