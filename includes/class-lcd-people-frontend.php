@@ -489,7 +489,11 @@ class LCD_People_Frontend {
                                 </p>
                             </div>
                         <?php endif; ?>
+                        <div class="lcd-volunteer-interests-footer">
+                        <p>To update your interests, <a href="<?php echo get_bloginfo('url'); ?>/volunteer">re-submit the Volunteer Interest Form here</a>.</p>
                     </div>
+                    </div>
+                    
                 </div>
                 
                 <!-- Upcoming Volunteer Shifts -->

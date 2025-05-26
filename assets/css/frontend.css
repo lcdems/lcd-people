@@ -257,6 +257,12 @@
     border-bottom-color: var(--color-primary, #2a5fb4);
 }
 
+.lcd-volunteer-interests-footer {
+    font-size: var(--font-size-sm, 0.875rem);
+    color: var(--color-text-muted, #6B7280);
+    padding: var(--spacing-sm, 1rem);
+}
+
 /* Volunteer Shifts */
 .lcd-volunteer-upcoming-shifts,
 .lcd-volunteer-past-shifts {
