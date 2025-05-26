@@ -28,7 +28,7 @@ class LCD_People {
     }
 
     private function __construct() {
-        error_log('LCD People: Plugin constructor called');
+       
         
         add_action('init', array($this, 'register_post_type'));
         add_action('init', array($this, 'register_taxonomies'));
@@ -70,7 +70,7 @@ class LCD_People {
         // Register REST API endpoint - add early and late hooks to ensure it runs
         add_action('rest_api_init', array($this, 'register_rest_endpoint'), 10);
         add_action('init', array($this, 'register_rest_endpoint'), 999);
-        error_log('LCD People: REST API hooks registered');
+        
 
         // Register cron job for membership status updates
         add_action('lcd_check_membership_statuses', array($this, 'check_membership_statuses'));
@@ -86,7 +86,7 @@ class LCD_People {
         add_action('lcd_member_status_changed', array($this, 'handle_person_sync'), 10, 1);
         add_action('save_post_lcd_person', array($this, 'handle_person_save'), 10, 3);
 
-        error_log('LCD People: All hooks registered');
+        
 
         // Add cancel membership AJAX handler
         add_action('wp_ajax_lcd_cancel_membership', array($this, 'ajax_cancel_membership'));
@@ -2057,8 +2057,6 @@ class LCD_People {
      * Register REST API endpoint
      */
     public function register_rest_endpoint() {
-        error_log('LCD People: Registering REST endpoints');
-        
         // Register ActBlue webhook endpoint
         register_rest_route('lcd-people/v1', '/actblue-webhook', array(
             'methods' => 'POST',
@@ -2068,22 +2066,16 @@ class LCD_People {
 
         // Register a separate namespace for the configured Forminator form
         $configured_form_id = get_option('lcd_people_forminator_volunteer_form');
-        error_log('LCD People: Configured form ID for REST route: ' . $configured_form_id);
         
         if (!empty($configured_form_id)) {
             // Create a unique namespace for this specific form
             $form_namespace = 'volunteer-form-' . $configured_form_id;
-            error_log('LCD People: Registering route with namespace: ' . $form_namespace);
             
             register_rest_route($form_namespace . '/v1', '/submit', array(
                 'methods' => 'POST,GET',  // Allow both POST and GET for testing
                 'callback' => array($this, 'handle_forminator_webhook'),
                 'permission_callback' => '__return_true'
             ));
-            
-            error_log('LCD People: Route registered. Full URL will be: ' . rest_url($form_namespace . '/v1/submit'));
-        } else {
-            error_log('LCD People: No form ID configured, skipping Forminator route registration');
         }
     }
 
@@ -2482,26 +2474,68 @@ class LCD_People {
      * Handle Forminator webhook
      */
     public function handle_forminator_webhook($request) {
-        // Debug ALL possible incoming data
-        error_log('LCD People: ========= FORMINATOR WEBHOOK DEBUG START =========');
-        error_log('LCD People: Route = ' . $request->get_route());
-        
-        // Try all possible ways to get the data
+        // Get data from the request
         $json_params = $request->get_json_params();
         $post_params = $request->get_params();
-        $body = $request->get_body();
-        $headers = $request->get_headers();
         
-        error_log('LCD People: JSON Params = ' . print_r($json_params, true));
-        error_log('LCD People: POST Params = ' . print_r($post_params, true));
-        error_log('LCD People: Raw Body = ' . print_r($body, true));
-        error_log('LCD People: Headers = ' . print_r($headers, true));
-        error_log('LCD People: ========= FORMINATOR WEBHOOK DEBUG END =========');
+        // Get the form data, trying both JSON and POST params
+        $form_data = !empty($json_params) ? $json_params : $post_params;
+        
+        if (empty($form_data)) {
+            return new WP_Error(
+                'no_data',
+                __('No form data received', 'lcd-people'),
+                array('status' => 400)
+            );
+        }
 
-        // For testing, just return success
+        // Get field mappings
+        $mappings = get_option('lcd_people_forminator_volunteer_mappings', array());
+        if (empty($mappings)) {
+            return new WP_Error(
+                'no_mappings',
+                __('No field mappings configured', 'lcd-people'),
+                array('status' => 400)
+            );
+        }
+
+        // Map form data to person data
+        $person_data = array();
+        foreach ($mappings as $form_field => $person_field) {
+            if (!empty($form_data[$form_field])) {
+                $person_data[$person_field] = $form_data[$form_field];
+            }
+        }
+
+        if (empty($person_data['email'])) {
+            return new WP_Error(
+                'no_email',
+                __('Email field is required', 'lcd-people'),
+                array('status' => 400)
+            );
+        }
+
+        // Try to find existing person by email
+        $person = $this->get_person_by_email($person_data['email']);
+
+        if ($person) {
+            // Update existing person
+            $this->update_person_from_forminator($person->ID, $person_data);
+            $this->add_sync_record($person->ID, 'Forminator', true, 'Person updated from volunteer form');
+            $response_message = 'Person updated successfully';
+        } else {
+            // Create new person
+            $person_id = $this->create_person_from_forminator($person_data);
+            if (is_wp_error($person_id)) {
+                return $person_id;
+            }
+            $this->add_sync_record($person_id, 'Forminator', true, 'New person created from volunteer form');
+            $response_message = 'New person created successfully';
+        }
+
         return array(
             'success' => true,
-            'message' => 'Debug mode - webhook received'
+            'message' => $response_message
         );
     }
 
@@ -3651,9 +3685,7 @@ class LCD_People {
 
 // Initialize the plugin
 function lcd_people_init() {
-    error_log('LCD People: Plugin initialization function called');
     $plugin = LCD_People::get_instance();
-    error_log('LCD People: Plugin instance created');
     
     // Initialize frontend functionality
     LCD_People_Frontend_Init();
