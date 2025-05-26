@@ -409,38 +409,516 @@ class LCD_People_Frontend {
      */
     private function render_volunteering_tab($person_id, $has_person_record) {
         ob_start();
+        
+        // Get volunteer data
+        $upcoming_shifts = array();
+        $past_shifts = array();
+        $volunteer_submission_data = null;
+        
+        if ($has_person_record) {
+            $person_email = get_post_meta($person_id, '_lcd_person_email', true);
+            $all_shifts = $this->get_person_volunteer_shifts($person_id, $person_email);
+            
+            // Separate upcoming and past shifts
+            $today = current_time('Y-m-d');
+            foreach ($all_shifts as $shift) {
+                $shift_date = '';
+                if (!empty($shift['shift_date'])) {
+                    $shift_date = $shift['shift_date'];
+                } elseif (!empty($shift['event_date'])) {
+                    $shift_date = $shift['event_date'];
+                }
+                
+                if (!empty($shift_date) && $shift_date >= $today) {
+                    $upcoming_shifts[] = $shift;
+                } else {
+                    $past_shifts[] = $shift;
+                }
+            }
+            
+            // Get volunteer interest form submission data
+            $latest_submission_id = get_post_meta($person_id, '_lcd_person_latest_volunteer_submission_id', true);
+            if (!empty($latest_submission_id)) {
+                $volunteer_submission_data = $this->get_volunteer_submission_data($latest_submission_id);
+            }
+        }
         ?>
         <div class="lcd-member-profile-section lcd-volunteer-info">
             <h3><?php _e('Volunteering Information', 'lcd-people'); ?></h3>
             
             <?php if (!$has_person_record): ?>
                 <div class="lcd-volunteer-no-record">
-                    <p><em><?php _e('No volunteer record found. <a href="'.get_bloginfo('url').'/volunteer">Sign up here</a> to get involved!', 'lcd-people'); ?></em></p>
+                    <p><em><?php _e('No volunteer record found.', 'lcd-people'); ?> <a href="<?php echo get_bloginfo('url'); ?>/volunteer"><?php _e('Sign up here', 'lcd-people'); ?></a> <?php _e('to get involved!', 'lcd-people'); ?></em></p>
                 </div>
             <?php else: ?>
-                <div class="lcd-volunteer-placeholder">
-                    <p><?php _e('Your volunteer information will be displayed here.', 'lcd-people'); ?></p>
-                    <p><em><?php _e('Volunteer shift assignments and history coming soon...', 'lcd-people'); ?></em></p>
-                </div>
                 
-                <!-- Future content areas -->
+                <!-- Volunteer Interest Form Data -->
+                <?php if ($volunteer_submission_data): ?>
+                    <div class="lcd-volunteer-interests">
+                        <h4><?php _e('Volunteer Interests', 'lcd-people'); ?></h4>
+                        <div class="lcd-volunteer-submission-info">
+                            <p class="submission-date">
+                                <strong><?php _e('Last updated:', 'lcd-people'); ?></strong>
+                                <?php echo esc_html($volunteer_submission_data['date_created']); ?>
+                            </p>
+                            <?php if (!empty($volunteer_submission_data['form_name'])): ?>
+                                <p class="form-name">
+                                    <strong><?php _e('Form:', 'lcd-people'); ?></strong>
+                                    <?php echo esc_html($volunteer_submission_data['form_name']); ?>
+                                </p>
+                            <?php endif; ?>
+                        </div>
+                        
+                        <?php if (!empty($volunteer_submission_data['fields'])): ?>
+                            <div class="lcd-volunteer-interests-data">
+                                <?php foreach ($volunteer_submission_data['fields'] as $field_name => $field_value): ?>
+                                    <div class="volunteer-interest-item">
+                                        <strong><?php echo esc_html($field_name); ?>:</strong>
+                                        <span><?php echo esc_html($field_value); ?></span>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                <?php endif; ?>
+                
+                <!-- Upcoming Volunteer Shifts -->
                 <div class="lcd-volunteer-upcoming-shifts">
                     <h4><?php _e('Upcoming Shifts', 'lcd-people'); ?></h4>
-                    <p class="lcd-volunteer-placeholder-text">
-                        <em><?php _e('Your upcoming volunteer shifts will appear here.', 'lcd-people'); ?></em>
-                    </p>
+                    <?php if (empty($upcoming_shifts)): ?>
+                        <p class="lcd-volunteer-placeholder-text">
+                            <em><?php _e('No upcoming volunteer shifts found.', 'lcd-people'); ?></em>
+                        </p>
+                    <?php else: ?>
+                        <div class="lcd-volunteer-shifts-list">
+                            <?php foreach ($upcoming_shifts as $shift): ?>
+                                <div class="lcd-shift-item">
+                                    <div class="lcd-shift-header">
+                                        <h5><?php echo esc_html($shift['event_title']); ?></h5>
+                                        <?php if (!empty($shift['formatted_event_date'])): ?>
+                                            <span class="lcd-shift-date">
+                                                <?php echo esc_html($shift['formatted_event_date']); ?>
+                                            </span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="lcd-shift-details">
+                                        <div class="lcd-shift-info">
+                                            <strong><?php _e('Shift:', 'lcd-people'); ?></strong> 
+                                            <?php echo esc_html($shift['shift_title']); ?>
+                                        </div>
+                                        <?php if (!empty($shift['shift_date_time'])): ?>
+                                            <div class="lcd-shift-time">
+                                                <strong><?php _e('Time:', 'lcd-people'); ?></strong>
+                                                <?php echo esc_html($shift['shift_date_time']); ?>
+                                            </div>
+                                        <?php endif; ?>
+                                        <?php if (!empty($shift['event_location'])): ?>
+                                            <div class="lcd-shift-location">
+                                                <strong><?php _e('Location:', 'lcd-people'); ?></strong>
+                                                <?php echo esc_html($shift['event_location']); ?>
+                                            </div>
+                                        <?php endif; ?>
+                                        <?php if (!empty($shift['volunteer_notes'])): ?>
+                                            <div class="lcd-shift-notes">
+                                                <strong><?php _e('Notes:', 'lcd-people'); ?></strong>
+                                                <?php echo esc_html($shift['volunteer_notes']); ?>
+                                            </div>
+                                        <?php endif; ?>
+                                        <div class="lcd-shift-status">
+                                            <strong><?php _e('Status:', 'lcd-people'); ?></strong>
+                                            <span class="status-<?php echo esc_attr($shift['status']); ?>">
+                                                <?php echo esc_html(ucfirst($shift['status'])); ?>
+                                            </span>
+                                        </div>
+                                        <div class="lcd-shift-signup-date">
+                                            <strong><?php _e('Signed up:', 'lcd-people'); ?></strong>
+                                            <?php echo esc_html($shift['formatted_signup_date']); ?>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
                 </div>
                 
+                <!-- Past Volunteer Activities -->
                 <div class="lcd-volunteer-past-shifts">
                     <h4><?php _e('Past Volunteer Activities', 'lcd-people'); ?></h4>
-                    <p class="lcd-volunteer-placeholder-text">
-                        <em><?php _e('Your volunteer history will appear here.', 'lcd-people'); ?></em>
-                    </p>
+                    <?php if (empty($past_shifts)): ?>
+                        <p class="lcd-volunteer-placeholder-text">
+                            <em><?php _e('No past volunteer activities found.', 'lcd-people'); ?></em>
+                        </p>
+                    <?php else: ?>
+                        <div class="lcd-volunteer-shifts-list">
+                            <?php foreach (array_slice($past_shifts, 0, 10) as $shift): // Show only last 10 ?>
+                                <div class="lcd-shift-item past-shift">
+                                    <div class="lcd-shift-header">
+                                        <h5><?php echo esc_html($shift['event_title']); ?></h5>
+                                        <?php if (!empty($shift['formatted_event_date'])): ?>
+                                            <span class="lcd-shift-date">
+                                                <?php echo esc_html($shift['formatted_event_date']); ?>
+                                            </span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="lcd-shift-details">
+                                        <div class="lcd-shift-info">
+                                            <strong><?php _e('Shift:', 'lcd-people'); ?></strong> 
+                                            <?php echo esc_html($shift['shift_title']); ?>
+                                        </div>
+                                        <?php if (!empty($shift['shift_date_time'])): ?>
+                                            <div class="lcd-shift-time">
+                                                <strong><?php _e('Time:', 'lcd-people'); ?></strong>
+                                                <?php echo esc_html($shift['shift_date_time']); ?>
+                                            </div>
+                                        <?php endif; ?>
+                                        <?php if (!empty($shift['event_location'])): ?>
+                                            <div class="lcd-shift-location">
+                                                <strong><?php _e('Location:', 'lcd-people'); ?></strong>
+                                                <?php echo esc_html($shift['event_location']); ?>
+                                            </div>
+                                        <?php endif; ?>
+                                        <div class="lcd-shift-status">
+                                            <strong><?php _e('Status:', 'lcd-people'); ?></strong>
+                                            <span class="status-<?php echo esc_attr($shift['status']); ?>">
+                                                <?php echo esc_html(ucfirst($shift['status'])); ?>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                            <?php if (count($past_shifts) > 10): ?>
+                                <p class="lcd-volunteer-more-activities">
+                                    <em><?php printf(__('Showing 10 of %d past activities.', 'lcd-people'), count($past_shifts)); ?></em>
+                                </p>
+                            <?php endif; ?>
+                        </div>
+                    <?php endif; ?>
                 </div>
+                
             <?php endif; ?>
         </div>
         <?php
         return ob_get_clean();
+    }
+    
+    /**
+     * Get volunteer shifts for a person (both upcoming and past)
+     */
+    private function get_person_volunteer_shifts($person_id, $person_email = '') {
+        if (!function_exists('lcd_get_volunteer_signups')) {
+            return array();
+        }
+
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'lcd_volunteer_signups';
+
+        // Get signups for this person by person_id or email
+        $where_conditions = array();
+        $where_values = array();
+
+        if (!empty($person_id)) {
+            $where_conditions[] = 'person_id = %d';
+            $where_values[] = $person_id;
+        }
+
+        if (!empty($person_email)) {
+            $where_conditions[] = 'volunteer_email = %s';
+            $where_values[] = $person_email;
+        }
+
+        if (empty($where_conditions)) {
+            return array();
+        }
+
+        $where_clause = '(' . implode(' OR ', $where_conditions) . ')';
+
+        $query = "
+            SELECT vs.*, p.post_title as event_title
+            FROM {$table_name} vs
+            LEFT JOIN {$wpdb->posts} p ON vs.event_id = p.ID
+            WHERE {$where_clause}
+            AND p.post_status = 'publish'
+            ORDER BY vs.signup_date DESC
+        ";
+
+        $signups = $wpdb->get_results($wpdb->prepare($query, ...$where_values));
+
+        if (empty($signups)) {
+            return array();
+        }
+
+        $shifts = array();
+
+        foreach ($signups as $signup) {
+            // Get event meta data
+            $event_date = get_post_meta($signup->event_id, '_event_date', true);
+            $event_location = get_post_meta($signup->event_id, '_event_location', true);
+
+            // Get volunteer shifts data to get shift details
+            $volunteer_shifts = get_post_meta($signup->event_id, '_volunteer_shifts', true);
+            $shift_details = array();
+            
+            if (is_array($volunteer_shifts) && isset($volunteer_shifts[$signup->shift_index])) {
+                $shift_details = $volunteer_shifts[$signup->shift_index];
+            }
+
+            // Format dates and times
+            $formatted_event_date = '';
+            if (!empty($event_date)) {
+                $formatted_event_date = date_i18n(get_option('date_format'), strtotime($event_date));
+            }
+
+            $shift_date_time = '';
+            $shift_date = '';
+            if (!empty($shift_details['date'])) {
+                $shift_date = $shift_details['date'];
+                $formatted_shift_date = date_i18n(get_option('date_format'), strtotime($shift_details['date']));
+                $time_parts = array();
+                
+                if (!empty($shift_details['start_time'])) {
+                    $time_parts[] = date_i18n(get_option('time_format'), strtotime($shift_details['date'] . ' ' . $shift_details['start_time']));
+                }
+                if (!empty($shift_details['end_time'])) {
+                    $time_parts[] = date_i18n(get_option('time_format'), strtotime($shift_details['date'] . ' ' . $shift_details['end_time']));
+                }
+                
+                $shift_date_time = $formatted_shift_date;
+                if (!empty($time_parts)) {
+                    $shift_date_time .= ' ' . implode(' - ', $time_parts);
+                }
+            }
+
+            $formatted_signup_date = date_i18n(get_option('date_format') . ' ' . get_option('time_format'), strtotime($signup->signup_date));
+
+            $shifts[] = array(
+                'event_id' => $signup->event_id,
+                'event_title' => $signup->event_title,
+                'event_location' => $event_location,
+                'event_date' => $event_date,
+                'shift_title' => $signup->shift_title,
+                'shift_date' => $shift_date,
+                'shift_date_time' => $shift_date_time,
+                'volunteer_notes' => $signup->volunteer_notes,
+                'status' => $signup->status,
+                'formatted_event_date' => $formatted_event_date,
+                'formatted_signup_date' => $formatted_signup_date,
+                'signup_date' => $signup->signup_date
+            );
+        }
+
+        return $shifts;
+    }
+    
+    /**
+     * Get volunteer interest form submission data
+     */
+    private function get_volunteer_submission_data($submission_id) {
+        global $wpdb;
+        
+        // Check if Forminator tables exist
+        $entries_table = $wpdb->prefix . 'frmt_form_entry';
+        $meta_table = $wpdb->prefix . 'frmt_form_entry_meta';
+        
+        if ($wpdb->get_var("SHOW TABLES LIKE '$entries_table'") != $entries_table) {
+            return false;
+        }
+
+        try {
+            // Get the submission entry from database
+            $entry = $wpdb->get_row($wpdb->prepare(
+                "SELECT * FROM $entries_table WHERE entry_id = %d",
+                $submission_id
+            ));
+            
+            if (!$entry) {
+                return false;
+            }
+
+            // Get form name if possible
+            $form_name = '';
+            if (class_exists('Forminator_API')) {
+                try {
+                    $form = Forminator_API::get_form($entry->form_id);
+                    $form_name = $form && isset($form->settings['formName']) ? $form->settings['formName'] : '';
+                } catch (Exception $e) {
+                    // Fallback to form ID if we can't get the name
+                    $form_name = 'Form ID: ' . $entry->form_id;
+                }
+            }
+
+            // Get field labels from the form definition
+            $field_labels = array();
+            if (class_exists('Forminator_API')) {
+                try {
+                    $form_fields = Forminator_API::get_form_fields($entry->form_id);
+                    
+                    if ($form_fields && is_array($form_fields)) {
+                        foreach ($form_fields as $field) {
+                            // Use reflection to access the protected raw property
+                            $field_data = null;
+                            if (is_object($field)) {
+                                try {
+                                    $reflection = new ReflectionClass($field);
+                                    $rawProperty = $reflection->getProperty('raw');
+                                    $rawProperty->setAccessible(true);
+                                    $field_data = $rawProperty->getValue($field);
+                                } catch (Exception $e) {
+                                    continue;
+                                }
+                            }
+                            
+                            if (!$field_data) {
+                                continue;
+                            }
+                            
+                            $field_id = isset($field_data['element_id']) ? $field_data['element_id'] : '';
+                            $field_label = isset($field_data['field_label']) ? $field_data['field_label'] : '';
+                            
+                            if ($field_id && $field_label) {
+                                $field_labels[$field_id] = $field_label;
+                                
+                                // Handle name field sub-components
+                                if (isset($field_data['type']) && $field_data['type'] === 'name') {
+                                    if (isset($field_data['fname']) && $field_data['fname']) {
+                                        $field_labels[$field_id . '-first-name'] = isset($field_data['fname_label']) ? $field_data['fname_label'] : $field_label . ' (First Name)';
+                                    }
+                                    if (isset($field_data['lname']) && $field_data['lname']) {
+                                        $field_labels[$field_id . '-last-name'] = isset($field_data['lname_label']) ? $field_data['lname_label'] : $field_label . ' (Last Name)';
+                                    }
+                                    if (isset($field_data['mname']) && $field_data['mname']) {
+                                        $field_labels[$field_id . '-middle-name'] = isset($field_data['mname_label']) ? $field_data['mname_label'] : $field_label . ' (Middle Name)';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch (Exception $e) {
+                    // Continue without field labels from form
+                }
+            }
+
+            // Format the submission data
+            $submission_data = array(
+                'form_name' => $form_name,
+                'date_created' => date_i18n(get_option('date_format') . ' ' . get_option('time_format'), strtotime($entry->date_created)),
+                'fields' => array()
+            );
+
+            // Get field data from meta table
+            $meta_data = $wpdb->get_results($wpdb->prepare(
+                "SELECT meta_key, meta_value FROM $meta_table WHERE entry_id = %d",
+                $submission_id
+            ));
+
+            if ($meta_data) {
+                foreach ($meta_data as $meta) {
+                    $field_value = maybe_unserialize($meta->meta_value);
+                    
+                    // Skip empty values
+                    if (empty($field_value)) {
+                        continue;
+                    }
+                    
+                    // Handle different field value structures
+                    if (is_array($field_value)) {
+                        if (isset($field_value['value'])) {
+                            $field_value = $field_value['value'];
+                        }
+                        if (is_array($field_value)) {
+                            // Convert array elements to strings, handling objects
+                            $string_values = array();
+                            foreach ($field_value as $value) {
+                                if (is_object($value)) {
+                                    // Convert object to string representation
+                                    if (isset($value->value)) {
+                                        $string_values[] = $value->value;
+                                    } elseif (isset($value->label)) {
+                                        $string_values[] = $value->label;
+                                    } else {
+                                        $string_values[] = json_encode($value);
+                                    }
+                                } elseif (is_array($value)) {
+                                    $string_values[] = implode(' ', $value);
+                                } else {
+                                    $string_values[] = (string) $value;
+                                }
+                            }
+                            $field_value = implode(', ', $string_values);
+                        }
+                    } elseif (is_object($field_value)) {
+                        // Handle object values
+                        if (isset($field_value->value)) {
+                            $field_value = $field_value->value;
+                        } elseif (isset($field_value->label)) {
+                            $field_value = $field_value->label;
+                        } else {
+                            $field_value = json_encode($field_value);
+                        }
+                    }
+                    
+                    // Get field label - first try from form definition, then fallback
+                    $field_label = '';
+                    if (isset($field_labels[$meta->meta_key])) {
+                        $field_label = $field_labels[$meta->meta_key];
+                    } else {
+                        $field_label = $this->convert_forminator_field_key_to_label($meta->meta_key);
+                    }
+                    
+                    if (!empty($field_value) && !empty($field_label)) {
+                        $submission_data['fields'][$field_label] = $field_value;
+                    }
+                }
+            }
+
+            return $submission_data;
+
+        } catch (Exception $e) {
+            // Log error if needed
+            error_log('LCD People Frontend: Error fetching Forminator submission data: ' . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Convert Forminator field key to readable label
+     */
+    private function convert_forminator_field_key_to_label($field_key) {
+        // Handle specific Forminator field patterns based on webhook data structure
+        if (preg_match('/^name-\d+-first-name$/', $field_key)) {
+            return 'First Name';
+        } elseif (preg_match('/^name-\d+-last-name$/', $field_key)) {
+            return 'Last Name';
+        } elseif (preg_match('/^name-\d+-middle-name$/', $field_key)) {
+            return 'Middle Name';
+        } elseif (preg_match('/^email-\d+$/', $field_key)) {
+            return 'Email Address';
+        } elseif (preg_match('/^phone-\d+$/', $field_key)) {
+            return 'Phone Number';
+        } elseif (preg_match('/^address-\d+$/', $field_key)) {
+            return 'Address';
+        } elseif (preg_match('/^text-\d+$/', $field_key)) {
+            return 'Text Field';
+        } elseif (preg_match('/^textarea-\d+$/', $field_key)) {
+            return 'Text Area';
+        } elseif (preg_match('/^select-\d+$/', $field_key)) {
+            return 'Select Field';
+        } elseif (preg_match('/^radio-\d+$/', $field_key)) {
+            return 'Radio Field';
+        } elseif (preg_match('/^checkbox-\d+$/', $field_key)) {
+            return 'Checkbox Field';
+        } elseif (preg_match('/^date-\d+$/', $field_key)) {
+            return 'Date Field';
+        } elseif (preg_match('/^time-\d+$/', $field_key)) {
+            return 'Time Field';
+        } elseif (preg_match('/^number-\d+$/', $field_key)) {
+            return 'Number Field';
+        } else {
+            // Convert field key to a more readable format
+            $label = str_replace(array('-', '_'), ' ', $field_key);
+            $label = preg_replace('/\d+/', '', $label); // Remove numbers
+            $label = trim($label);
+            return ucwords($label);
+        }
     }
 }
 

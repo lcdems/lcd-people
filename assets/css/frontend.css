@@ -67,8 +67,6 @@
     border-bottom-color: white;
 }
 
-
-
 .lcd-tab-content {
     display: none;
     background-color: white;
@@ -155,6 +153,50 @@
     color: var(--color-text-muted, #6B7280);
 }
 
+/* Volunteer Interests */
+.lcd-volunteer-interests {
+    background-color: var(--color-bg-light, #F9FAFB);
+    border: 1px solid var(--color-border, #E5E5E5);
+    border-radius: var(--border-radius, 4px);
+    padding: var(--spacing-md, 2rem);
+    margin-bottom: var(--spacing-md, 2rem);
+}
+
+.lcd-volunteer-submission-info {
+    margin-bottom: var(--spacing-sm, 1rem);
+    padding-bottom: var(--spacing-sm, 1rem);
+    border-bottom: 1px solid var(--color-border, #E5E5E5);
+}
+
+.lcd-volunteer-submission-info p {
+    margin: var(--spacing-xs, 0.5rem) 0;
+    font-size: var(--font-size-sm, 0.875rem);
+    color: var(--color-text-muted, #6B7280);
+}
+
+.lcd-volunteer-interests-data {
+    display: grid;
+    gap: var(--spacing-sm, 1rem);
+}
+
+.volunteer-interest-item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs, 0.25rem);
+}
+
+.volunteer-interest-item strong {
+    font-weight: 600;
+    color: var(--color-secondary, #002B50);
+    font-size: var(--font-size-sm, 0.875rem);
+}
+
+.volunteer-interest-item span {
+    color: var(--color-text, #374151);
+    line-height: var(--line-height-normal, 1.5);
+}
+
+/* Volunteer Shifts */
 .lcd-volunteer-upcoming-shifts,
 .lcd-volunteer-past-shifts {
     background-color: var(--color-bg-light, #F9FAFB);
@@ -163,10 +205,129 @@
     margin-bottom: var(--spacing-md, 2rem);
 }
 
+.lcd-volunteer-shifts-list {
+    display: grid;
+    gap: var(--spacing-md, 1.5rem);
+}
+
+.lcd-shift-item {
+    background-color: white;
+    border: 1px solid var(--color-border, #E5E5E5);
+    border-radius: var(--border-radius, 4px);
+    padding: var(--spacing-md, 1.5rem);
+    transition: box-shadow 0.2s ease;
+}
+
+.lcd-shift-item:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.lcd-shift-item.past-shift {
+    opacity: 0.8;
+    border-color: var(--color-border-light, #F3F4F6);
+}
+
+.lcd-shift-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: var(--spacing-sm, 1rem);
+    padding-bottom: var(--spacing-xs, 0.5rem);
+    border-bottom: 1px solid var(--color-border-light, #F3F4F6);
+}
+
+.lcd-shift-header h5 {
+    margin: 0;
+    font-size: var(--font-size-lg, 1.125rem);
+    font-weight: 600;
+    color: var(--color-secondary, #002B50);
+    flex: 1;
+}
+
+.lcd-shift-date {
+    font-size: var(--font-size-sm, 0.875rem);
+    color: var(--color-text-muted, #6B7280);
+    font-weight: 500;
+    white-space: nowrap;
+    margin-left: var(--spacing-sm, 1rem);
+}
+
+.lcd-shift-details {
+    display: grid;
+    gap: var(--spacing-xs, 0.5rem);
+}
+
+.lcd-shift-info,
+.lcd-shift-time,
+.lcd-shift-location,
+.lcd-shift-notes,
+.lcd-shift-status,
+.lcd-shift-signup-date {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-xs, 0.5rem);
+}
+
+.lcd-shift-details strong {
+    font-weight: 600;
+    color: var(--color-secondary, #002B50);
+    min-width: 80px;
+    font-size: var(--font-size-sm, 0.875rem);
+}
+
+.lcd-shift-details span,
+.lcd-shift-details div:not(.lcd-shift-status) {
+    color: var(--color-text, #374151);
+    font-size: var(--font-size-sm, 0.875rem);
+    line-height: var(--line-height-normal, 1.5);
+}
+
+/* Status badges */
+.lcd-shift-status span {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: var(--font-size-xs, 0.75rem);
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.status-confirmed {
+    background-color: #4CAF50;
+    color: white;
+}
+
+.status-pending {
+    background-color: var(--color-accent, #ee8f13);
+    color: white;
+}
+
+.status-cancelled {
+    background-color: #f44336;
+    color: white;
+}
+
+.status-completed {
+    background-color: #2196F3;
+    color: white;
+}
+
 .lcd-volunteer-placeholder-text {
     color: var(--color-text-muted, #6B7280);
     font-style: italic;
     margin: var(--spacing-xs, 0.5rem) 0;
+}
+
+.lcd-volunteer-more-activities {
+    text-align: center;
+    margin-top: var(--spacing-md, 1.5rem);
+    padding-top: var(--spacing-sm, 1rem);
+    border-top: 1px solid var(--color-border-light, #F3F4F6);
+}
+
+.lcd-volunteer-more-activities em {
+    color: var(--color-text-muted, #6B7280);
+    font-size: var(--font-size-sm, 0.875rem);
 }
 
 /* Membership Status Badges */
@@ -295,6 +456,28 @@
     .lcd-volunteer-past-shifts {
         padding: var(--spacing-sm, 1rem);
     }
+    
+    .lcd-volunteer-interests {
+        padding: var(--spacing-sm, 1rem);
+    }
+    
+    .lcd-shift-item {
+        padding: var(--spacing-sm, 1rem);
+    }
+    
+    .lcd-shift-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--spacing-xs, 0.5rem);
+    }
+    
+    .lcd-shift-date {
+        margin-left: 0;
+    }
+    
+    .lcd-shift-details strong {
+        min-width: auto;
+    }
 }
 
 @media (max-width: 600px) {
@@ -309,5 +492,29 @@
     
     .lcd-tab-content {
         padding: var(--spacing-xs, 0.75rem);
+    }
+    
+    .volunteer-interest-item {
+        flex-direction: column;
+        gap: var(--spacing-xs, 0.25rem);
+    }
+    
+    .lcd-volunteer-interests-data {
+        gap: var(--spacing-xs, 0.75rem);
+    }
+    
+    .lcd-shift-details {
+        gap: var(--spacing-xs, 0.25rem);
+    }
+    
+    .lcd-shift-info,
+    .lcd-shift-time,
+    .lcd-shift-location,
+    .lcd-shift-notes,
+    .lcd-shift-status,
+    .lcd-shift-signup-date {
+        flex-direction: column;
+        gap: var(--spacing-xs, 0.25rem);
+        align-items: flex-start;
     }
 } 
