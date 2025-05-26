@@ -2065,7 +2065,7 @@ class LCD_People {
             // Create a unique namespace for this specific form
             $form_namespace = 'volunteer-form-' . $configured_form_id;
             register_rest_route($form_namespace . '/v1', '/', array(
-                'methods' => 'POST',
+                'methods' => array('GET', 'POST'),
                 'callback' => array($this, 'handle_forminator_webhook'),
                 'permission_callback' => '__return_true' // Forminator doesn't support auth headers
             ));
@@ -2464,9 +2464,27 @@ class LCD_People {
     }
 
     /**
+     * Extract form ID from the request route
+     */
+    private function extract_form_id_from_route($route) {
+        preg_match('/volunteer-form-([^\/]+)\/v1/', $route, $matches);
+        return isset($matches[1]) ? $matches[1] : '';
+    }
+
+    /**
      * Handle Forminator webhook
      */
     public function handle_forminator_webhook($request) {
+        // Handle GET requests (for testing/validation)
+        if ($request->get_method() === 'GET') {
+            return new WP_REST_Response(array(
+                'success' => true,
+                'message' => 'LCD People Forminator webhook endpoint is ready',
+                'methods' => array('GET', 'POST'),
+                'form_id' => $this->extract_form_id_from_route($request->get_route())
+            ), 200);
+        }
+
         $params = $request->get_json_params();
         
         // If no JSON data, try form data
@@ -2475,9 +2493,7 @@ class LCD_People {
         }
 
         // Extract form ID from the request route (namespace)
-        $route = $request->get_route();
-        preg_match('/volunteer-form-([^\/]+)\/v1/', $route, $matches);
-        $url_form_id = isset($matches[1]) ? $matches[1] : '';
+        $url_form_id = $this->extract_form_id_from_route($request->get_route());
         
         // Get the configured form ID and mappings
         $configured_form_id = get_option('lcd_people_forminator_volunteer_form');
@@ -2592,11 +2608,11 @@ class LCD_People {
 
         $this->add_sync_record($person_id, 'Forminator Webhook', true, $response_message);
 
-        return array(
+        return new WP_REST_Response(array(
             'success' => true,
             'message' => $response_message,
             'person_id' => $person_id
-        );
+        ), 200);
     }
 
 
