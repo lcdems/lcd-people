@@ -1,8 +1,71 @@
 # LCD People Manager
 
-A WordPress plugin for managing members and their roles in the LCD organization.
+Manages people and their roles in the LCD organization
 
 ## Features
+
+- Custom post type for People records
+- User registration integration
+- Integration with ActBlue for dues processing
+- Integration with Sender.net for email marketing
+- Integration with Forminator for volunteer sign-ups
+- Admin interface for managing people and their data
+
+## User Registration Integration
+
+The plugin automatically connects WordPress user registrations to People records:
+
+### How it Works
+
+1. **New User Registration**: When someone registers on your WordPress site, the plugin:
+   - Searches for an existing Person record matching their email address
+   - If found, connects the new user account to the existing Person record
+   - If not found, creates a new Person record and connects it to the user account
+
+2. **Login Fallback**: As a backup, the plugin also checks during user login:
+   - If a user doesn't have a connected Person record, it searches for one by email
+   - Connects existing records or creates new ones as needed
+
+3. **Data Synchronization**: When connecting:
+   - Person records are updated with user information (name, email) if fields are empty
+   - User registration date is stored in the Person record
+   - Default membership status is set to "inactive"
+
+### Hooks and Actions
+
+The plugin provides several WordPress actions that developers can hook into:
+
+- `lcd_person_created_from_registration` - Fired when a new Person record is created from user registration
+- `lcd_person_connected_to_user` - Fired when an existing Person record is connected to a user account
+
+### Admin Management
+
+#### User Connections Page
+
+Navigate to **People → User Connections** in the WordPress admin to:
+
+- View statistics on connected vs. unconnected users and people
+- Bulk connect existing users to People records
+- See a list of unconnected users with potential matches
+
+#### Manual Connection
+
+Administrators can manually connect users to people records using the `connect_user_to_person($user_id, $person_id)` method.
+
+### Database Structure
+
+**User Meta**: 
+- `_lcd_person_id` - Stores the connected Person record ID on the user
+
+**Person Meta**:
+- `_lcd_person_user_id` - Stores the connected WordPress user ID on the Person record
+- `_lcd_person_email` - Person's email address
+- `_lcd_person_first_name` - Person's first name
+- `_lcd_person_last_name` - Person's last name
+- `_lcd_person_registration_date` - Date when the user account was created
+- `_lcd_person_membership_status` - Membership status (active, inactive, expired, etc.)
+
+## Integration Features
 
 - Member management with custom post types
 - ActBlue integration for membership dues

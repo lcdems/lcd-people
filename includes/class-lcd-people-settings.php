@@ -57,6 +57,16 @@ class LCD_People_Settings {
             'lcd-people-forminator-settings',
             array($this, 'render_forminator_settings_page')
         );
+
+        // User Connection Management
+        add_submenu_page(
+            'edit.php?post_type=lcd_person',
+            __('User Connection Management', 'lcd-people'),
+            __('User Connections', 'lcd-people'),
+            'manage_options',
+            'lcd-people-user-connections',
+            array($this, 'render_user_connections_page')
+        );
     }
 
     /**
@@ -891,6 +901,218 @@ class LCD_People_Settings {
                 <p><strong><?php _e('Note:', 'lcd-people'); ?></strong> <?php _e('When someone submits the form, a new person record will be created with the "volunteer" role automatically assigned.', 'lcd-people'); ?></p>
             </div>
         </div>
+        <?php
+    }
+
+    public function render_user_connections_page() {
+        if (!current_user_can('manage_options')) {
+            return;
+        }
+        
+        // Handle bulk operations
+        if (isset($_POST['action']) && $_POST['action'] === 'connect_unconnected_users') {
+            check_admin_referer('lcd_people_user_connections');
+            $this->connect_unconnected_users();
+        }
+        
+        ?>
+        <div class="wrap">
+            <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
+            
+            <div class="notice notice-info">
+                <p><?php _e('This page helps you manage connections between WordPress users and People records. The plugin automatically connects users during registration, but you can use these tools for existing users.', 'lcd-people'); ?></p>
+            </div>
+
+            <h2><?php _e('Statistics', 'lcd-people'); ?></h2>
+            <?php $this->render_connection_stats(); ?>
+
+            <hr>
+
+            <h2><?php _e('Bulk Actions', 'lcd-people'); ?></h2>
+            <form method="post" action="">
+                <?php wp_nonce_field('lcd_people_user_connections'); ?>
+                <input type="hidden" name="action" value="connect_unconnected_users">
+                <p><?php _e('Connect all unconnected users to their corresponding People records (matching by email).', 'lcd-people'); ?></p>
+                <?php submit_button(__('Connect Unconnected Users', 'lcd-people'), 'primary', 'submit', false); ?>
+            </form>
+
+            <hr>
+
+            <h2><?php _e('Unconnected Users', 'lcd-people'); ?></h2>
+            <?php $this->render_unconnected_users(); ?>
+        </div>
+        <?php
+    }
+
+    /**
+     * Render connection statistics
+     */
+    private function render_connection_stats() {
+        global $wpdb;
+        
+        // Get total users
+        $total_users = count_users();
+        $user_count = $total_users['total_users'];
+        
+        // Get connected users
+        $connected_users = $wpdb->get_var(
+            "SELECT COUNT(*) FROM {$wpdb->usermeta} WHERE meta_key = '_lcd_person_id'"
+        );
+        
+        // Get total people
+        $people_count = wp_count_posts('lcd_person')->publish;
+        
+        // Get connected people
+        $connected_people = $wpdb->get_var(
+            "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key = '_lcd_person_user_id'"
+        );
+        
+        ?>
+        <table class="widefat">
+            <thead>
+                <tr>
+                    <th><?php _e('Metric', 'lcd-people'); ?></th>
+                    <th><?php _e('Count', 'lcd-people'); ?></th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><?php _e('Total WordPress Users', 'lcd-people'); ?></td>
+                    <td><?php echo esc_html($user_count); ?></td>
+                </tr>
+                <tr>
+                    <td><?php _e('Connected Users', 'lcd-people'); ?></td>
+                    <td><?php echo esc_html($connected_users); ?></td>
+                </tr>
+                <tr>
+                    <td><?php _e('Unconnected Users', 'lcd-people'); ?></td>
+                    <td><?php echo esc_html($user_count - $connected_users); ?></td>
+                </tr>
+                <tr>
+                    <td><?php _e('Total People Records', 'lcd-people'); ?></td>
+                    <td><?php echo esc_html($people_count); ?></td>
+                </tr>
+                <tr>
+                    <td><?php _e('Connected People', 'lcd-people'); ?></td>
+                    <td><?php echo esc_html($connected_people); ?></td>
+                </tr>
+                <tr>
+                    <td><?php _e('Unconnected People', 'lcd-people'); ?></td>
+                    <td><?php echo esc_html($people_count - $connected_people); ?></td>
+                </tr>
+            </tbody>
+        </table>
+        <?php
+    }
+
+    /**
+     * Connect unconnected users to matching people records
+     */
+    private function connect_unconnected_users() {
+        $lcd_people = $this->main_plugin;
+        $connected = 0;
+        $created = 0;
+        
+        // Get users without person connections
+        $users = get_users(array(
+            'meta_query' => array(
+                array(
+                    'key' => '_lcd_person_id',
+                    'compare' => 'NOT EXISTS'
+                )
+            )
+        ));
+        
+        foreach ($users as $user) {
+            // Try to find existing person by email
+            $person = $lcd_people->get_person_by_email($user->user_email);
+            
+            if ($person) {
+                // Connect to existing person
+                if ($lcd_people->connect_user_to_person($user->ID, $person->ID)) {
+                    $connected++;
+                }
+            } else {
+                // Create new person record
+                $person_id = $lcd_people->create_person_from_user($user->ID);
+                if ($person_id) {
+                    update_user_meta($user->ID, LCD_People::USER_META_KEY, $person_id);
+                    $created++;
+                }
+            }
+        }
+        
+        echo '<div class="notice notice-success"><p>';
+        printf(
+            __('Connected %d users to existing People records and created %d new People records.', 'lcd-people'),
+            $connected,
+            $created
+        );
+        echo '</p></div>';
+    }
+
+    /**
+     * Render unconnected users table
+     */
+    private function render_unconnected_users() {
+        // Get users without person connections
+        $users = get_users(array(
+            'meta_query' => array(
+                array(
+                    'key' => '_lcd_person_id',
+                    'compare' => 'NOT EXISTS'
+                )
+            ),
+            'number' => 20 // Limit to first 20 for performance
+        ));
+        
+        if (empty($users)) {
+            echo '<p>' . __('All users are connected to People records.', 'lcd-people') . '</p>';
+            return;
+        }
+        
+        ?>
+        <table class="widefat">
+            <thead>
+                <tr>
+                    <th><?php _e('User', 'lcd-people'); ?></th>
+                    <th><?php _e('Email', 'lcd-people'); ?></th>
+                    <th><?php _e('Registration Date', 'lcd-people'); ?></th>
+                    <th><?php _e('Potential Matches', 'lcd-people'); ?></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($users as $user): ?>
+                    <?php 
+                    $lcd_people = $this->main_plugin;
+                    $potential_matches = $lcd_people->find_people_by_email($user->user_email);
+                    ?>
+                    <tr>
+                        <td>
+                            <strong><?php echo esc_html($user->display_name); ?></strong><br>
+                            <small><?php echo esc_html($user->user_login); ?></small>
+                        </td>
+                        <td><?php echo esc_html($user->user_email); ?></td>
+                        <td><?php echo esc_html($user->user_registered); ?></td>
+                        <td>
+                            <?php if (!empty($potential_matches)): ?>
+                                <?php foreach ($potential_matches as $match): ?>
+                                    <a href="<?php echo get_edit_post_link($match->ID); ?>" target="_blank">
+                                        <?php echo esc_html($match->post_title); ?>
+                                    </a><br>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <em><?php _e('No matches found', 'lcd-people'); ?></em>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+        
+        <?php if (count($users) >= 20): ?>
+            <p><em><?php _e('Showing first 20 unconnected users. Use bulk action above to connect all.', 'lcd-people'); ?></em></p>
+        <?php endif; ?>
         <?php
     }
 } 

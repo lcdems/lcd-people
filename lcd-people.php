@@ -111,6 +111,16 @@ class LCD_People {
         // Add class to admin rows for duplicate primary highlighting
         add_filter('post_class', array($this, 'add_person_row_class'), 10, 3);
         add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_styles')); // Ensure styles are enqueued
+
+        // Handle user deletion
+        add_action('delete_user', array($this, 'handle_user_deletion'));
+        
+        // Handle post deletion
+        add_action('before_delete_post', array($this, 'handle_post_deletion'));
+        
+        // Add registration hooks
+        add_action('user_register', array($this, 'handle_user_registration'));
+        add_action('wp_login', array($this, 'handle_user_login_check'), 10, 2);
     }
 
     public function enqueue_admin_scripts($hook) {
@@ -2915,6 +2925,244 @@ class LCD_People {
                 echo '<p style="color: #d63638;"><strong>' . esc_html__('Warning:', 'lcd-people') . '</strong> ' . esc_html__('No primary member is set for this email address among the linked members. Please save one of the members to automatically assign primary status.', 'lcd-people') . '</p>';
             }
         }
+    }
+
+    /**
+     * User Registration Integration Methods
+     * 
+     * These methods handle connecting WordPress user registrations to People records:
+     * 1. When a user registers, try to find an existing Person record by email (and name if available)
+     * 2. If found, connect the existing Person to the new user account
+     * 3. If not found, create a new Person record and connect it
+     * 4. On login, check if user needs to be connected to a Person record (fallback)
+     */
+
+    /**
+     * Handle new user registration
+     * Triggered by 'user_register' hook
+     */
+    public function handle_user_registration($user_id) {
+        // Get the newly registered user
+        $user = get_user_by('ID', $user_id);
+        if (!$user) {
+            return;
+        }
+
+        // Try to find existing person by email first
+        $person = $this->get_person_by_email($user->user_email, $user->first_name, $user->last_name);
+        
+        if (!$person) {
+            // If no exact match, try by email only
+            $person = $this->get_person_by_email($user->user_email);
+        }
+
+        if ($person) {
+            // Connect existing person to user
+            $person_id = $person->ID;
+            update_post_meta($person_id, '_lcd_person_user_id', $user_id);
+            update_user_meta($user_id, self::USER_META_KEY, $person_id);
+            
+            // Update person data with user info if not already set
+            $this->update_person_from_user($person_id, $user);
+        } else {
+            // Create new person record
+            $person_id = $this->create_person_from_user($user_id);
+            if ($person_id && !is_wp_error($person_id)) {
+                update_user_meta($user_id, self::USER_META_KEY, $person_id);
+            }
+        }
+    }
+
+    /**
+     * Handle user login check
+     * Triggered by 'wp_login' hook as a fallback to ensure users are connected to Person records
+     */
+    public function handle_user_login_check($user_login, $user) {
+        // Check if user already has a connected person record
+        $person_id = get_user_meta($user->ID, self::USER_META_KEY, true);
+        if ($person_id && get_post($person_id)) {
+            return; // Already connected
+        }
+
+        // Try to find existing person by email first
+        $person = $this->get_person_by_email($user->user_email, $user->first_name, $user->last_name);
+        
+        if (!$person) {
+            // If no exact match, try by email only
+            $person = $this->get_person_by_email($user->user_email);
+        }
+
+        if ($person) {
+            // Connect existing person to user
+            $person_id = $person->ID;
+            update_post_meta($person_id, '_lcd_person_user_id', $user->ID);
+            update_user_meta($user->ID, self::USER_META_KEY, $person_id);
+            
+            // Update person data with user info if not already set
+            $this->update_person_from_user($person_id, $user);
+        } else {
+            // Create new person record
+            $person_id = $this->create_person_from_user($user->ID);
+            if ($person_id && !is_wp_error($person_id)) {
+                update_user_meta($user->ID, self::USER_META_KEY, $person_id);
+            }
+        }
+    }
+
+    /**
+     * Create a person record from WordPress user data
+     */
+    private function create_person_from_user($user_id) {
+        $user = get_user_by('ID', $user_id);
+        if (!$user) {
+            return false;
+        }
+
+        // Create post title from user data
+        $post_title = '';
+        if (!empty($user->first_name) && !empty($user->last_name)) {
+            $post_title = $user->first_name . ' ' . $user->last_name;
+        } elseif (!empty($user->display_name) && $user->display_name !== $user->user_login) {
+            $post_title = $user->display_name;
+        } else {
+            $post_title = $user->user_login;
+        }
+
+        // Create person post
+        $post_data = array(
+            'post_title'  => $post_title,
+            'post_type'   => 'lcd_person',
+            'post_status' => 'publish'
+        );
+
+        $person_id = wp_insert_post($post_data);
+
+        if (is_wp_error($person_id)) {
+            error_log('Failed to create person record for user ' . $user_id . ': ' . $person_id->get_error_message());
+            return false;
+        }
+
+        // Set person meta data
+        update_post_meta($person_id, '_lcd_person_user_id', $user_id);
+        update_post_meta($person_id, '_lcd_person_email', $user->user_email);
+        
+        if (!empty($user->first_name)) {
+            update_post_meta($person_id, '_lcd_person_first_name', $user->first_name);
+        }
+        
+        if (!empty($user->last_name)) {
+            update_post_meta($person_id, '_lcd_person_last_name', $user->last_name);
+        }
+
+        // Set default membership status for new registrations
+        update_post_meta($person_id, '_lcd_person_membership_status', 'inactive');
+        
+        // Set registration date
+        update_post_meta($person_id, '_lcd_person_registration_date', current_time('Y-m-d'));
+
+        // Fire action for other plugins/themes to hook into
+        do_action('lcd_person_created_from_registration', $person_id, $user_id);
+
+        return $person_id;
+    }
+
+    /**
+     * Update person record with user data (for existing people)
+     */
+    private function update_person_from_user($person_id, $user) {
+        // Only update fields that are empty in the person record
+        $existing_first_name = get_post_meta($person_id, '_lcd_person_first_name', true);
+        $existing_last_name = get_post_meta($person_id, '_lcd_person_last_name', true);
+        
+        if (empty($existing_first_name) && !empty($user->first_name)) {
+            update_post_meta($person_id, '_lcd_person_first_name', $user->first_name);
+        }
+        
+        if (empty($existing_last_name) && !empty($user->last_name)) {
+            update_post_meta($person_id, '_lcd_person_last_name', $user->last_name);
+        }
+
+        // Update the post title if it needs to be better
+        $person_post = get_post($person_id);
+        if ($person_post && !empty($user->first_name) && !empty($user->last_name)) {
+            $new_title = $user->first_name . ' ' . $user->last_name;
+            if ($person_post->post_title !== $new_title) {
+                wp_update_post(array(
+                    'ID' => $person_id,
+                    'post_title' => $new_title
+                ));
+            }
+        }
+
+        // Set registration date if not already set
+        $registration_date = get_post_meta($person_id, '_lcd_person_registration_date', true);
+        if (empty($registration_date)) {
+            update_post_meta($person_id, '_lcd_person_registration_date', current_time('Y-m-d'));
+        }
+
+        // Fire action for other plugins/themes to hook into
+        do_action('lcd_person_connected_to_user', $person_id, $user->ID);
+    }
+
+    /**
+     * Manually connect a user to a person record
+     * Useful for admin functions or bulk operations
+     */
+    public function connect_user_to_person($user_id, $person_id) {
+        // Validate inputs
+        $user = get_user_by('ID', $user_id);
+        $person = get_post($person_id);
+        
+        if (!$user || !$person || $person->post_type !== 'lcd_person') {
+            return false;
+        }
+
+        // Check if user is already connected to another person
+        $existing_person_id = get_user_meta($user_id, self::USER_META_KEY, true);
+        if ($existing_person_id && $existing_person_id != $person_id) {
+            // Disconnect from previous person
+            delete_post_meta($existing_person_id, '_lcd_person_user_id');
+        }
+
+        // Check if person is already connected to another user
+        $existing_user_id = get_post_meta($person_id, '_lcd_person_user_id', true);
+        if ($existing_user_id && $existing_user_id != $user_id) {
+            // Disconnect from previous user
+            delete_user_meta($existing_user_id, self::USER_META_KEY);
+        }
+
+        // Make the connection
+        update_post_meta($person_id, '_lcd_person_user_id', $user_id);
+        update_user_meta($user_id, self::USER_META_KEY, $person_id);
+        
+        // Update person data from user if needed
+        $this->update_person_from_user($person_id, $user);
+
+        return true;
+    }
+
+    /**
+     * Find existing person records by email only (without name matching)
+     * Useful for finding potential matches during registration
+     */
+    public function find_people_by_email($email) {
+        if (empty($email)) {
+            return array();
+        }
+
+        $args = array(
+            'post_type' => 'lcd_person',
+            'posts_per_page' => -1,
+            'meta_query' => array(
+                array(
+                    'key' => '_lcd_person_email',
+                    'value' => $email,
+                    'compare' => '='
+                )
+            )
+        );
+
+        return get_posts($args);
     }
 }
 
