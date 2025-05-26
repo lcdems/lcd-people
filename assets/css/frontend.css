@@ -26,6 +26,74 @@
     margin-bottom: var(--spacing-md, 2rem);
 }
 
+/* Tab Layout */
+.lcd-member-tabs {
+    margin-top: var(--spacing-md, 2rem);
+}
+
+.lcd-member-tab-nav {
+    display: flex;
+    border-bottom: 1px solid var(--color-border, #E5E5E5);
+    gap: 0;
+}
+
+.lcd-tab-button {
+    background: transparent;
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+    padding: var(--spacing-sm, 1rem) var(--spacing-lg, 1.5rem);
+    font-size: var(--font-size-base, 1rem);
+    font-weight: 500;
+    color: var(--color-text-muted, #6B7280);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+    margin-right: 2px;
+    margin-bottom: -1px;
+    box-shadow: none;
+}
+
+.lcd-tab-button:hover {
+    color: var(--color-primary, #2a5fb4);
+    background-color: var(--color-bg-light, #F9FAFB);
+    border-color: var(--color-border, #E5E5E5);
+}
+
+.lcd-tab-button.active {
+    color: var(--color-primary, #eeeeee);
+    background-color: white;
+    border-color: var(--color-border, #E5E5E5);
+    border-bottom-color: white;
+}
+
+
+
+.lcd-tab-content {
+    display: none;
+    background-color: white;
+    border: 1px solid var(--color-border, #E5E5E5);
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+    padding: var(--spacing-md, 2rem);
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+.lcd-tab-content.active {
+    display: block;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 /* Member Profile Sections */
 .lcd-member-profile-section {
     margin-bottom: var(--spacing-md, 2rem);
@@ -37,6 +105,13 @@
     margin-bottom: var(--spacing-sm, 1rem);
 }
 
+.lcd-member-profile-section h4 {
+    font-size: var(--font-size-lg, 1.125rem);
+    color: var(--color-secondary, #002B50);
+    margin-bottom: var(--spacing-xs, 0.5rem);
+    margin-top: var(--spacing-md, 2rem);
+}
+
 .lcd-member-profile-section p {
     margin: var(--spacing-xs, 0.5rem) 0;
     line-height: var(--line-height-normal, 1.5);
@@ -45,6 +120,53 @@
 .lcd-member-profile-section strong {
     font-weight: 600;
     margin-right: var(--spacing, 0.5rem);
+}
+
+/* Volunteering Styles */
+.lcd-volunteer-info {
+    min-height: 200px;
+}
+
+.lcd-volunteer-no-record {
+    background-color: #fff8e1;
+    border-left: 4px solid var(--color-accent, #ee8f13);
+    padding: var(--spacing-sm, 1rem) var(--spacing-md, 2rem);
+    margin-bottom: var(--spacing-md, 2rem);
+    border-radius: var(--border-radius, 4px);
+}
+
+.lcd-volunteer-no-record p {
+    margin: 0;
+    color: #b8860b;
+    font-style: italic;
+}
+
+.lcd-volunteer-placeholder {
+    background-color: #f8f9fa;
+    border: 1px dashed var(--color-border, #E5E5E5);
+    padding: var(--spacing-md, 2rem);
+    text-align: center;
+    border-radius: var(--border-radius, 4px);
+    margin-bottom: var(--spacing-md, 2rem);
+}
+
+.lcd-volunteer-placeholder p {
+    margin: var(--spacing-xs, 0.5rem) 0;
+    color: var(--color-text-muted, #6B7280);
+}
+
+.lcd-volunteer-upcoming-shifts,
+.lcd-volunteer-past-shifts {
+    background-color: var(--color-bg-light, #F9FAFB);
+    padding: var(--spacing-md, 2rem);
+    border-radius: var(--border-radius, 4px);
+    margin-bottom: var(--spacing-md, 2rem);
+}
+
+.lcd-volunteer-placeholder-text {
+    color: var(--color-text-muted, #6B7280);
+    font-style: italic;
+    margin: var(--spacing-xs, 0.5rem) 0;
 }
 
 /* Membership Status Badges */
@@ -141,13 +263,51 @@
 }
 
 /* Responsive Styles */
-@media (max-width: 600px) {
+@media (max-width: 768px) {
     .lcd-member-profile {
+        padding: var(--spacing-sm, 1rem);
+    }
+    
+    .lcd-member-tab-nav {
+        flex-wrap: wrap;
+    }
+    
+    .lcd-tab-button {
+        flex: 1;
+        min-width: 120px;
+        text-align: center;
+        padding: var(--spacing-xs, 0.75rem) var(--spacing-sm, 1rem);
+        font-size: var(--font-size-sm, 0.875rem);
+        margin-right: 1px;
+        border-radius: 4px 4px 0 0;
+    }
+    
+    .lcd-tab-content {
         padding: var(--spacing-sm, 1rem);
     }
     
     .lcd-membership-dates {
         flex-direction: column;
         gap: var(--spacing-xs, 0.5rem);
+    }
+    
+    .lcd-volunteer-upcoming-shifts,
+    .lcd-volunteer-past-shifts {
+        padding: var(--spacing-sm, 1rem);
+    }
+}
+
+@media (max-width: 600px) {
+    .lcd-member-profile {
+        padding: var(--spacing-xs, 0.5rem);
+    }
+    
+    .lcd-tab-button {
+        padding: var(--spacing-xs, 0.5rem) var(--spacing-xs, 0.75rem);
+        font-size: var(--font-size-xs, 0.8rem);
+    }
+    
+    .lcd-tab-content {
+        padding: var(--spacing-xs, 0.75rem);
     }
 } 

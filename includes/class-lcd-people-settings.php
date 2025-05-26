@@ -573,6 +573,7 @@ class LCD_People_Settings {
             'address' => __('Address', 'lcd-people'),
             'role' => __('Role (will be added as taxonomy)', 'lcd-people'),
             'precinct' => __('Precinct (will be added as taxonomy)', 'lcd-people'),
+            'latest_volunteer_submission_id' => __('Latest Volunteer Submission ID', 'lcd-people'),
         );
     }
 

@@ -222,6 +222,13 @@ class LCD_People_Frontend {
         $start_date = $start_date ? date_i18n(get_option('date_format'), strtotime($start_date)) : '';
         $end_date = $end_date ? date_i18n(get_option('date_format'), strtotime($end_date)) : '';
         
+        // Check if LCD Events plugin is active
+        // Include the plugin.php file to access is_plugin_active() function
+        if (!function_exists('is_plugin_active')) {
+            require_once(ABSPATH . 'wp-admin/includes/plugin.php');
+        }
+        $events_plugin_active = is_plugin_active('lcd-events/lcd-events.php') || function_exists('lcd_register_events_post_type');
+        
         // Start output buffer
         ob_start();
         ?>
@@ -234,112 +241,202 @@ class LCD_People_Frontend {
                 </div>
             <?php endif; ?>
             
-            <div class="lcd-member-profile-section lcd-member-status">
-                <h3><?php _e('Membership Status', 'lcd-people'); ?></h3>
-                <?php if ($membership_status === 'active'): ?>
-                    <div class="lcd-membership-badge active">
-                        <?php _e('Active Member', 'lcd-people'); ?>
-                    </div>
-                <?php elseif ($membership_status === 'grace'): ?>
-                    <div class="lcd-membership-badge grace">
-                        <?php _e('Grace Period', 'lcd-people'); ?>
-                    </div>
-                <?php elseif ($membership_status === 'expired'): ?>
-                    <div class="lcd-membership-badge expired">
-                        <?php _e('Expired Membership', 'lcd-people'); ?>
-                    </div>
-                <?php elseif ($membership_status === 'inactive'): ?>
-                    <div class="lcd-membership-badge inactive">
-                        <?php _e('Inactive Member', 'lcd-people'); ?>
-                    </div>
-                <?php else: ?>
-                    <div class="lcd-membership-badge none">
-                        <?php _e('Not a Member', 'lcd-people'); ?>
-                    </div>
-                    <div class="lcd-membership-badge none">
-                        <a href="<?php echo home_url('/membership'); ?>"><?php _e('Learn about membership', 'lcd-people'); ?></a>
-                    </div>
-                <?php endif; ?>
+            <!-- Tab Navigation -->
+            <div class="lcd-member-tabs">
+                <div class="lcd-member-tab-nav" role="tablist">
+                    <button class="lcd-tab-button active" 
+                            data-tab="membership"
+                            role="tab"
+                            aria-controls="membership-tab"
+                            aria-selected="true"
+                            id="membership-tab-button">
+                        <?php _e('Membership Info', 'lcd-people'); ?>
+                    </button>
+                    <?php if ($events_plugin_active): ?>
+                        <button class="lcd-tab-button" 
+                                data-tab="volunteering"
+                                role="tab"
+                                aria-controls="volunteering-tab"
+                                aria-selected="false"
+                                id="volunteering-tab-button">
+                            <?php _e('Volunteering Info', 'lcd-people'); ?>
+                        </button>
+                    <?php endif; ?>
+                </div>
                 
-                <?php if ($is_sustaining): ?>
-                    <div class="lcd-membership-badge sustaining">
-                        <?php _e('Sustaining Member', 'lcd-people'); ?>
+                <!-- Membership Tab Content -->
+                <div class="lcd-tab-content active" 
+                     id="membership-tab"
+                     role="tabpanel"
+                     aria-labelledby="membership-tab-button">
+                    <?php echo $this->render_membership_tab($membership_status, $membership_type, $is_sustaining, $start_date, $end_date, $first_name, $last_name, $email, $phone, $address, $roles, $precincts); ?>
+                </div>
+                
+                <!-- Volunteering Tab Content -->
+                <?php if ($events_plugin_active): ?>
+                    <div class="lcd-tab-content" 
+                         id="volunteering-tab"
+                         role="tabpanel"
+                         aria-labelledby="volunteering-tab-button">
+                        <?php echo $this->render_volunteering_tab($person_id, $has_person_record); ?>
                     </div>
-                <?php endif; ?>
-                
-                <?php if ($membership_type): ?>
-                    <p>
-                        <strong><?php _e('Type:', 'lcd-people'); ?></strong>
-                        <?php echo esc_html(ucfirst($membership_type)); ?>
-                    </p>
-                <?php endif; ?>
-                
-                <?php if ($start_date || $end_date): ?>
-                    <p class="lcd-membership-dates">
-                        <?php if ($start_date): ?>
-                            <span class="lcd-membership-start">
-                                <strong><?php _e('Start Date:', 'lcd-people'); ?></strong>
-                                <?php echo esc_html($start_date); ?>
-                            </span>
-                        <?php endif; ?>
-                        
-                        <?php if ($end_date): ?>
-                            <span class="lcd-membership-end">
-                                <strong><?php _e('End Date:', 'lcd-people'); ?></strong>
-                                <?php echo esc_html($end_date); ?>
-                            </span>
-                        <?php endif; ?>
-                    </p>
                 <?php endif; ?>
             </div>
+        </div>
+        <?php
+        return ob_get_clean();
+    }
+    
+    /**
+     * Render the membership tab content
+     */
+    private function render_membership_tab($membership_status, $membership_type, $is_sustaining, $start_date, $end_date, $first_name, $last_name, $email, $phone, $address, $roles, $precincts) {
+        ob_start();
+        ?>
+        <div class="lcd-member-profile-section lcd-member-status">
+            <h3><?php _e('Membership Status', 'lcd-people'); ?></h3>
+            <?php if ($membership_status === 'active'): ?>
+                <div class="lcd-membership-badge active">
+                    <?php _e('Active Member', 'lcd-people'); ?>
+                </div>
+            <?php elseif ($membership_status === 'grace'): ?>
+                <div class="lcd-membership-badge grace">
+                    <?php _e('Grace Period', 'lcd-people'); ?>
+                </div>
+            <?php elseif ($membership_status === 'expired'): ?>
+                <div class="lcd-membership-badge expired">
+                    <?php _e('Expired Membership', 'lcd-people'); ?>
+                </div>
+            <?php elseif ($membership_status === 'inactive'): ?>
+                <div class="lcd-membership-badge inactive">
+                    <?php _e('Inactive Member', 'lcd-people'); ?>
+                </div>
+            <?php else: ?>
+                <div class="lcd-membership-badge none">
+                    <?php _e('Not a Member', 'lcd-people'); ?>
+                </div>
+                <div class="lcd-membership-badge none">
+                    <a href="<?php echo home_url('/membership'); ?>"><?php _e('Learn about membership', 'lcd-people'); ?></a>
+                </div>
+            <?php endif; ?>
             
-            <div class="lcd-member-profile-section lcd-member-info">
-                <h3><?php _e('Contact Information', 'lcd-people'); ?></h3>
-                <p>
-                    <strong><?php _e('Name:', 'lcd-people'); ?></strong>
-                    <?php echo esc_html(trim("$first_name $last_name")); ?>
-                </p>
-                
-                <?php if ($email): ?>
-                <p>
-                    <strong><?php _e('Email:', 'lcd-people'); ?></strong>
-                    <?php echo esc_html($email); ?>
-                </p>
-                <?php endif; ?>
-                
-                <?php if ($phone): ?>
-                <p>
-                    <strong><?php _e('Phone:', 'lcd-people'); ?></strong>
-                    <?php echo esc_html($phone); ?>
-                </p>
-                <?php endif; ?>
-                
-                <?php if ($address): ?>
-                <p>
-                    <strong><?php _e('Address:', 'lcd-people'); ?></strong>
-                    <?php echo esc_html($address); ?>
-                </p>
-                <?php endif; ?>
-            </div>
+            <?php if ($is_sustaining): ?>
+                <div class="lcd-membership-badge sustaining">
+                    <?php _e('Sustaining Member', 'lcd-people'); ?>
+                </div>
+            <?php endif; ?>
             
-            <?php if (!empty($roles) || !empty($precincts)): ?>
-            <div class="lcd-member-profile-section lcd-member-roles">
-                <h3><?php _e('Organizational Information', 'lcd-people'); ?></h3>
-                
-                <?php if (!empty($roles)): ?>
+            <?php if ($membership_type): ?>
                 <p>
-                    <strong><?php _e('Roles:', 'lcd-people'); ?></strong>
-                    <?php echo esc_html(implode(', ', $roles)); ?>
+                    <strong><?php _e('Type:', 'lcd-people'); ?></strong>
+                    <?php echo esc_html(ucfirst($membership_type)); ?>
                 </p>
-                <?php endif; ?>
+            <?php endif; ?>
+            
+            <?php if ($start_date || $end_date): ?>
+                <p class="lcd-membership-dates">
+                    <?php if ($start_date): ?>
+                        <span class="lcd-membership-start">
+                            <strong><?php _e('Start Date:', 'lcd-people'); ?></strong>
+                            <?php echo esc_html($start_date); ?>
+                        </span>
+                    <?php endif; ?>
+                    
+                    <?php if ($end_date): ?>
+                        <span class="lcd-membership-end">
+                            <strong><?php _e('End Date:', 'lcd-people'); ?></strong>
+                            <?php echo esc_html($end_date); ?>
+                        </span>
+                    <?php endif; ?>
+                </p>
+            <?php endif; ?>
+        </div>
+        
+        <div class="lcd-member-profile-section lcd-member-info">
+            <h3><?php _e('Contact Information', 'lcd-people'); ?></h3>
+            <p>
+                <strong><?php _e('Name:', 'lcd-people'); ?></strong>
+                <?php echo esc_html(trim("$first_name $last_name")); ?>
+            </p>
+            
+            <?php if ($email): ?>
+            <p>
+                <strong><?php _e('Email:', 'lcd-people'); ?></strong>
+                <?php echo esc_html($email); ?>
+            </p>
+            <?php endif; ?>
+            
+            <?php if ($phone): ?>
+            <p>
+                <strong><?php _e('Phone:', 'lcd-people'); ?></strong>
+                <?php echo esc_html($phone); ?>
+            </p>
+            <?php endif; ?>
+            
+            <?php if ($address): ?>
+            <p>
+                <strong><?php _e('Address:', 'lcd-people'); ?></strong>
+                <?php echo esc_html($address); ?>
+            </p>
+            <?php endif; ?>
+        </div>
+        
+        <?php if (!empty($roles) || !empty($precincts)): ?>
+        <div class="lcd-member-profile-section lcd-member-roles">
+            <h3><?php _e('Organizational Information', 'lcd-people'); ?></h3>
+            
+            <?php if (!empty($roles)): ?>
+            <p>
+                <strong><?php _e('Roles:', 'lcd-people'); ?></strong>
+                <?php echo esc_html(implode(', ', $roles)); ?>
+            </p>
+            <?php endif; ?>
+            
+            <?php if (!empty($precincts)): ?>
+            <p>
+                <strong><?php _e('Precinct:', 'lcd-people'); ?></strong>
+                <?php echo esc_html(implode(', ', $precincts)); ?>
+            </p>
+            <?php endif; ?>
+        </div>
+        <?php endif; ?>
+        <?php
+        return ob_get_clean();
+    }
+    
+    /**
+     * Render the volunteering tab content
+     */
+    private function render_volunteering_tab($person_id, $has_person_record) {
+        ob_start();
+        ?>
+        <div class="lcd-member-profile-section lcd-volunteer-info">
+            <h3><?php _e('Volunteering Information', 'lcd-people'); ?></h3>
+            
+            <?php if (!$has_person_record): ?>
+                <div class="lcd-volunteer-no-record">
+                    <p><em><?php _e('No volunteer record found. Please contact us to get involved!', 'lcd-people'); ?></em></p>
+                </div>
+            <?php else: ?>
+                <div class="lcd-volunteer-placeholder">
+                    <p><?php _e('Your volunteer information will be displayed here.', 'lcd-people'); ?></p>
+                    <p><em><?php _e('Volunteer shift assignments and history coming soon...', 'lcd-people'); ?></em></p>
+                </div>
                 
-                <?php if (!empty($precincts)): ?>
-                <p>
-                    <strong><?php _e('Precinct:', 'lcd-people'); ?></strong>
-                    <?php echo esc_html(implode(', ', $precincts)); ?>
-                </p>
-                <?php endif; ?>
-            </div>
+                <!-- Future content areas -->
+                <div class="lcd-volunteer-upcoming-shifts">
+                    <h4><?php _e('Upcoming Shifts', 'lcd-people'); ?></h4>
+                    <p class="lcd-volunteer-placeholder-text">
+                        <em><?php _e('Your upcoming volunteer shifts will appear here.', 'lcd-people'); ?></em>
+                    </p>
+                </div>
+                
+                <div class="lcd-volunteer-past-shifts">
+                    <h4><?php _e('Past Volunteer Activities', 'lcd-people'); ?></h4>
+                    <p class="lcd-volunteer-placeholder-text">
+                        <em><?php _e('Your volunteer history will appear here.', 'lcd-people'); ?></em>
+                    </p>
+                </div>
             <?php endif; ?>
         </div>
         <?php
