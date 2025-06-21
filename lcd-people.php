@@ -985,6 +985,13 @@ class LCD_People {
             'message' => 'Field mappings: ' . print_r($mappings, true)
         );
 
+        // Debug log the raw form data received
+        $debug_info['steps'][] = array(
+            'step' => 'raw_form_data',
+            'status' => 'info',
+            'message' => 'Raw form data received: ' . print_r($form_data, true)
+        );
+
         // Map form data to person data
         $person_data = array();
         foreach ($mappings as $form_field => $person_field) {
@@ -1004,22 +1011,94 @@ class LCD_People {
             );
             
             // Handle name field components (e.g., name-1_first_name, name-1_last_name)
-            if (strpos($form_field, '_first_name') !== false || strpos($form_field, '_last_name') !== false) {
-                // Extract the base name field (e.g., "name-1" from "name-1_first_name")
-                $base_field = str_replace(array('_first_name', '_last_name', '_middle_name'), '', $form_field);
-                $base_field_underscore = str_replace('-', '_', $base_field);
-                
-                // Check if the base name field exists in form data
-                if (isset($form_data[$base_field_underscore]) && is_array($form_data[$base_field_underscore])) {
-                    $name_data = $form_data[$base_field_underscore];
+            if (strpos($form_field, '_first_name') !== false || strpos($form_field, '_last_name') !== false || strpos($form_field, '_middle_name') !== false) {
+                // First, try to get the value directly from the form data
+                // Forminator might send individual components directly
+                if (isset($form_data[$form_field_underscore])) {
+                    $person_data[$person_field] = $form_data[$form_field_underscore];
+                    $debug_info['steps'][] = array(
+                        'step' => 'name_field_direct',
+                        'status' => 'success',
+                        'message' => sprintf(
+                            'Found name field "%s" directly in form data: %s',
+                            $form_field_underscore,
+                            $form_data[$form_field_underscore]
+                        )
+                    );
+                } else {
+                    // Fallback: try to extract from base name field array
+                    // Extract the base name field (e.g., "name-1" from "name-1_first_name")
+                    $base_field = str_replace(array('_first_name', '_last_name', '_middle_name'), '', $form_field);
+                    $base_field_underscore = str_replace('-', '_', $base_field);
                     
-                    // Extract the specific name component
-                    if (strpos($form_field, '_first_name') !== false && isset($name_data['first-name'])) {
-                        $person_data[$person_field] = $name_data['first-name'];
-                    } elseif (strpos($form_field, '_last_name') !== false && isset($name_data['last-name'])) {
-                        $person_data[$person_field] = $name_data['last-name'];
-                    } elseif (strpos($form_field, '_middle_name') !== false && isset($name_data['middle-name'])) {
-                        $person_data[$person_field] = $name_data['middle-name'];
+                    $debug_info['steps'][] = array(
+                        'step' => 'name_field_fallback',
+                        'status' => 'info',
+                        'message' => sprintf(
+                            'Trying fallback for name field "%s" using base field "%s"',
+                            $form_field,
+                            $base_field_underscore
+                        )
+                    );
+                    
+                    // Check if the base name field exists in form data
+                    if (isset($form_data[$base_field_underscore]) && is_array($form_data[$base_field_underscore])) {
+                        $name_data = $form_data[$base_field_underscore];
+                        
+                        // Extract the specific name component
+                        if (strpos($form_field, '_first_name') !== false && isset($name_data['first-name'])) {
+                            $person_data[$person_field] = $name_data['first-name'];
+                            $debug_info['steps'][] = array(
+                                'step' => 'name_field_extracted',
+                                'status' => 'success',
+                                'message' => sprintf(
+                                    'Extracted first name from base field "%s": %s',
+                                    $base_field_underscore,
+                                    $name_data['first-name']
+                                )
+                            );
+                        } elseif (strpos($form_field, '_last_name') !== false && isset($name_data['last-name'])) {
+                            $person_data[$person_field] = $name_data['last-name'];
+                            $debug_info['steps'][] = array(
+                                'step' => 'name_field_extracted',
+                                'status' => 'success',
+                                'message' => sprintf(
+                                    'Extracted last name from base field "%s": %s',
+                                    $base_field_underscore,
+                                    $name_data['last-name']
+                                )
+                            );
+                        } elseif (strpos($form_field, '_middle_name') !== false && isset($name_data['middle-name'])) {
+                            $person_data[$person_field] = $name_data['middle-name'];
+                            $debug_info['steps'][] = array(
+                                'step' => 'name_field_extracted',
+                                'status' => 'success',
+                                'message' => sprintf(
+                                    'Extracted middle name from base field "%s": %s',
+                                    $base_field_underscore,
+                                    $name_data['middle-name']
+                                )
+                            );
+                        } else {
+                            $debug_info['steps'][] = array(
+                                'step' => 'name_field_fallback_failed',
+                                'status' => 'error',
+                                'message' => sprintf(
+                                    'Could not extract name component from base field "%s". Available keys: %s',
+                                    $base_field_underscore,
+                                    implode(', ', array_keys($name_data))
+                                )
+                            );
+                        }
+                    } else {
+                        $debug_info['steps'][] = array(
+                            'step' => 'name_field_fallback_failed',
+                            'status' => 'error',
+                            'message' => sprintf(
+                                'Base name field "%s" not found in form data or is not an array',
+                                $base_field_underscore
+                            )
+                        );
                     }
                 }
             } else {
