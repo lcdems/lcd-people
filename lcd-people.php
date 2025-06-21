@@ -17,11 +17,13 @@ if (!defined('ABSPATH')) {
 require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-frontend.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-settings.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-actblue-handler.php';
+require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-sender-handler.php';
 
 class LCD_People {
     private static $instance = null;
     private $settings;
     private $actblue_handler;
+    private $sender_handler;
     const USER_META_KEY = '_lcd_person_id';
 
     public static function get_instance() {
@@ -37,6 +39,9 @@ class LCD_People {
         
         // Initialize ActBlue handler
         $this->actblue_handler = new LCD_People_ActBlue_Handler($this);
+        
+        // Initialize Sender.net handler
+        $this->sender_handler = new LCD_People_Sender_Handler($this);
        
         
         add_action('init', array($this, 'register_post_type'));
@@ -815,421 +820,8 @@ class LCD_People {
         update_post_meta($person_id, '_lcd_person_sync_records', $sync_records);
     }
 
-    private function sync_person_to_sender($person_id, $trigger_automation = true) {
-        // Check if primary member
-        $is_primary = get_post_meta($person_id, '_lcd_person_is_primary', true);
-        $email = get_post_meta($person_id, '_lcd_person_email', true); // Need email for logging
-
-        if ($is_primary !== '1') {
-            $this->add_sync_record($person_id, 'Sender.net', false, 'Sync skipped: Not the primary member for this email (' . ($email ?: 'No Email') . ').');
-            return false; // Indicate sync was skipped/failed
-        }
-        
-        $token = get_option('lcd_people_sender_token');
-        if (empty($token)) {
-            $this->add_sync_record($person_id, 'Sender.net', false, 'No API token configured');
-            return false;
-        }
-
-        $email = get_post_meta($person_id, '_lcd_person_email', true);
-        if (empty($email)) {
-            $this->add_sync_record($person_id, 'Sender.net', false, 'No email address found');
-            return false;
-        }
-
-        // Get current and previous membership status
-        $current_status = get_post_meta($person_id, '_lcd_person_membership_status', true);
-        $previous_status = get_post_meta($person_id, '_lcd_person_previous_status', true);
-
-        // Get end date and format it for display
-        $end_date = get_post_meta($person_id, '_lcd_person_end_date', true);
-        $end_date_display = $end_date ? date_i18n(get_option('date_format'), strtotime($end_date)) : '';
-        
-        // Calculate grace period end date (30 days after end date) and format it
-        $grace_period_end_date = $end_date ? date('Y-m-d', strtotime($end_date . ' +30 days')) : '';
-        $grace_period_end_date_display = $grace_period_end_date ? date_i18n(get_option('date_format'), strtotime($grace_period_end_date)) : '';
-
-        // Determine if this is a new member activation
-        $is_new_activation = ($previous_status === '' || $previous_status === false) && $current_status === 'active';
-        
-        // First, try to get existing subscriber
-        $existing_subscriber = null;
-        $response = wp_remote_get('https://api.sender.net/v2/subscribers/' . urlencode($email), array(
-            'headers' => array(
-                'Authorization' => 'Bearer ' . $token,
-                'Accept' => 'application/json'
-            )
-        ));
-
-        if (is_wp_error($response)) {
-            $this->add_sync_record($person_id, 'Sender.net', false, 'Error checking existing subscriber: ' . $response->get_error_message());
-            return false;
-        }
-
-        $status = wp_remote_retrieve_response_code($response);
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-
-        if ($status === 200 && isset($body['data'])) {
-            $existing_subscriber = $body['data'];
-        }
-
-        // Get groups to sync
-        $groups = array();
-        
-        // If subscriber exists, preserve their existing groups
-        if ($existing_subscriber && isset($existing_subscriber['subscriber_tags'])) {
-            foreach ($existing_subscriber['subscriber_tags'] as $tag) {
-                $groups[] = $tag['id'];
-            }
-        }
-
-        // Add new member group if this is a new activation
-        if ($is_new_activation) {
-            $new_member_group = get_option('lcd_people_sender_new_member_group');
-            if (!empty($new_member_group) && !in_array($new_member_group, $groups) && $trigger_automation) {
-                $groups[] = $new_member_group;
-            }
-        }
-
-        // Get sustaining member status
-        $is_sustaining = get_post_meta($person_id, '_lcd_person_is_sustaining', true);
-
-        // Format phone number if exists
-        $phone = get_post_meta($person_id, '_lcd_person_phone', true);
-        if (!empty($phone)) {
-            // Remove any non-digit characters
-            $phone = preg_replace('/[^0-9]/', '', $phone);
-            
-            // Add +1 country code for US numbers if not already present
-            if (strlen($phone) === 10) {
-                $phone = '+1' . $phone;
-            } elseif (strlen($phone) === 11 && $phone[0] === '1') {
-                $phone = '+' . $phone;
-            }
-        }
-
-        $subscriber_data = array(
-            'email' => $email,
-            'firstname' => get_post_meta($person_id, '_lcd_person_first_name', true),
-            'lastname' => get_post_meta($person_id, '_lcd_person_last_name', true),
-            'groups' => $groups,
-            'fields' => array(
-                '{$membership_status}' => $current_status,
-                '{$membership_end_date}' => $end_date,
-                '{$membership_end_date_display}' => $end_date_display,
-                '{$grace_period_end_date_display}' => $grace_period_end_date_display,
-                '{$sustaining_member}' => $is_sustaining ? 'true' : ''
-            ),
-            'trigger_automation' => $trigger_automation,
-            'trigger_groups' => true
-        );
-
-        // Only add phone if it's properly formatted
-        if (!empty($phone)) {
-            $subscriber_data['phone'] = $phone;
-        }
-
-        if ($existing_subscriber) {
-            // For existing subscribers, only update the fields we want to change
-            $update_data = array(
-                'fields' => $subscriber_data['fields'],
-                'trigger_automation' => $subscriber_data['trigger_automation'],
-                'trigger_groups' => $subscriber_data['trigger_groups']
-            );
-            
-            // Only update groups if we're adding the new member group
-            if ($is_new_activation) {
-                $update_data['groups'] = $subscriber_data['groups'];
-            }
-            
-            // Include basic info updates
-            $update_data['firstname'] = $subscriber_data['firstname'];
-            $update_data['lastname'] = $subscriber_data['lastname'];
-            if (isset($subscriber_data['phone'])) {
-                $update_data['phone'] = $subscriber_data['phone'];
-            }
-
-            $response = wp_remote_request('https://api.sender.net/v2/subscribers/' . urlencode($email), array(
-                'method' => 'PATCH',
-                'headers' => array(
-                    'Authorization' => 'Bearer ' . $token,
-                    'Content-Type' => 'application/json',
-                    'Accept' => 'application/json'
-                ),
-                'body' => json_encode($update_data)
-            ));
-        } else {
-            $response = wp_remote_post('https://api.sender.net/v2/subscribers', array(
-                'headers' => array(
-                    'Authorization' => 'Bearer ' . $token,
-                    'Content-Type' => 'application/json',
-                    'Accept' => 'application/json'
-                ),
-                'body' => json_encode($subscriber_data)
-            ));
-        }
-
-        if (is_wp_error($response)) {
-            $this->add_sync_record($person_id, 'Sender.net', false, 'Sync failed: ' . $response->get_error_message());
-            return false;
-        }
-
-        $status = wp_remote_retrieve_response_code($response);
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-
-        if ($status === 200 || $status === 201) {
-            $this->add_sync_record($person_id, 'Sender.net', true);
-            
-            // Store the current status as previous for next time
-            update_post_meta($person_id, '_lcd_person_previous_status', $current_status);
-            
-            return true;
-        } else {
-            $message = isset($body['message']) ? $body['message'] : 'Unknown error';
-            $this->add_sync_record($person_id, 'Sender.net', false, 'Sync failed. Status: ' . $status . ', Message: ' . $message);
-            return false;
-        }
-    }
-
-    public function change_title_placeholder($title) {
-        $screen = get_current_screen();
-        if ($screen && $screen->post_type === 'lcd_person') {
-            return __('Name will be auto-generated from First and Last Name', 'lcd-people');
-        }
-        return $title;
-    }
-
-    public function add_name_notice() {
-        $screen = get_current_screen();
-        if ($screen && $screen->post_type === 'lcd_person') {
-            $post = get_post();
-            // If a title is not yet set, show a notice
-            if (empty($post->post_title)) {
-                echo '<div class="notice notice-info inline"><p>' . __('The title will be automatically generated from the First and Last Name fields.', 'lcd-people') . '</p></div>';
-            } else {
-                // Display the title in header text
-                echo '<h1>' . esc_html($post->post_title) . '</h1>';
-            }
-        }
-    }
-
-    public function modify_post_title($data, $postarr) {
-        if ($data['post_type'] === 'lcd_person' && isset($_POST['lcd_person_first_name']) && isset($_POST['lcd_person_last_name'])) {
-            $first_name = sanitize_text_field($_POST['lcd_person_first_name']);
-            $last_name = sanitize_text_field($_POST['lcd_person_last_name']);
-            $data['post_title'] = $first_name . ' ' . $last_name;
-        }
-        return $data;
-    }
-
-    public function save_meta_box_data($post_id) {
-        if (!isset($_POST['lcd_person_meta_box_nonce'])) {
-            return;
-        }
-
-        if (!wp_verify_nonce($_POST['lcd_person_meta_box_nonce'], 'lcd_person_meta_box')) {
-            return;
-        }
-
-        if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
-            return;
-        }
-
-        if (!current_user_can('edit_post', $post_id)) {
-            return;
-        }
-
-        // Handle user connection/disconnection
-        $old_user_id = get_post_meta($post_id, '_lcd_person_user_id', true);
-        $new_user_id = isset($_POST['lcd_person_user_id']) ? sanitize_text_field($_POST['lcd_person_user_id']) : '';
-
-        if ($old_user_id !== $new_user_id) {
-            // Remove old connection if exists
-            if ($old_user_id) {
-                delete_user_meta($old_user_id, self::USER_META_KEY);
-            }
-
-            // Add new connection if exists
-            if ($new_user_id) {
-                // Check for existing connection
-                $existing_person_id = $this->get_person_by_user_id($new_user_id);
-                if ($existing_person_id && $existing_person_id !== $post_id) {
-                    // Don't save the new user_id if there's a duplicate connection
-                    return;
-                }
-                update_user_meta($new_user_id, self::USER_META_KEY, $post_id);
-            }
-        }
-
-        $fields = array(
-            'lcd_person_first_name',
-            'lcd_person_last_name',
-            'lcd_person_email',
-            'lcd_person_phone',
-            'lcd_person_address',
-            'lcd_person_membership_status',
-            'lcd_person_start_date',
-            'lcd_person_end_date',
-            'lcd_person_membership_type',
-            'lcd_person_user_id',
-            'lcd_person_dues_paid_via',
-            'lcd_person_actblue_lineitem_id',
-            'lcd_person_payment_note',
-            'lcd_person_latest_volunteer_submission_id'
-        );
-
-        foreach ($fields as $field) {
-            if (isset($_POST[$field])) {
-                update_post_meta(
-                    $post_id,
-                    '_' . $field,
-                    sanitize_text_field($_POST[$field])
-                );
-            }
-        }
-
-        // Handle the checkbox field separately since it won't be in $_POST if unchecked
-        $is_sustaining = isset($_POST['lcd_person_is_sustaining']) ? '1' : '0';
-        update_post_meta($post_id, '_lcd_person_is_sustaining', $is_sustaining);
-
-        // Handle Primary Member (Automatic Assignment)
-        $email = isset($_POST['lcd_person_email']) ? sanitize_email($_POST['lcd_person_email']) : '';
-        // $submitted_is_primary = isset($_POST['lcd_person_is_primary']) ? '1' : '0'; // Removed - no longer submitted
-        $is_primary_final = '0'; // Default to not primary
-
-        if (!empty($email)) {
-            // Find if another primary person exists with this email
-            $args = array(
-                'post_type' => 'lcd_person',
-                'posts_per_page' => 1,
-                'fields' => 'ids',
-                'post__not_in' => array($post_id), // Exclude current post
-                'meta_query' => array(
-                    'relation' => 'AND',
-                    array(
-                        'key' => '_lcd_person_email',
-                        'value' => $email,
-                        'compare' => '='
-                    ),
-                    array(
-                        'key' => '_lcd_person_is_primary',
-                        'value' => '1',
-                        'compare' => '='
-                    )
-                )
-            );
-            $existing_primary_query = new WP_Query($args);
-            $existing_primary_id = $existing_primary_query->posts ? $existing_primary_query->posts[0] : false;
-
-            if ($existing_primary_id) {
-                // Another primary exists, current post *must* be secondary
-                $is_primary_final = '0';
-                // Store the ID of the actual primary for display in the meta box notice
-                update_post_meta($post_id, '_lcd_person_actual_primary_id', $existing_primary_id);
-            } else {
-                // No other primary exists for this email, this one *must* be primary
-                $is_primary_final = '1';
-                delete_post_meta($post_id, '_lcd_person_actual_primary_id');
-            }
-           
-        } else {
-            // No email, cannot be primary
-            $is_primary_final = '0';
-            delete_post_meta($post_id, '_lcd_person_actual_primary_id');
-        }
-        update_post_meta($post_id, '_lcd_person_is_primary', $is_primary_final);
-
-        // If ActBlue line item ID is set, update the line item URL
-        if (isset($_POST['lcd_person_actblue_lineitem_id']) && !empty($_POST['lcd_person_actblue_lineitem_id'])) {
-            $lineitem_id = absint($_POST['lcd_person_actblue_lineitem_id']);
-            update_post_meta($post_id, '_lcd_person_actblue_lineitem_url', 
-                sprintf('https://secure.actblue.com/entities/155025/lineitems/%d', $lineitem_id)
-            );
-        } else {
-            delete_post_meta($post_id, '_lcd_person_actblue_lineitem_url');
-        }
-    }
-
-    public function ajax_check_user_connection() {
-        check_ajax_referer('lcd_people_user_search', 'nonce');
-
-        if (!current_user_can('edit_posts')) {
-            wp_die(-1);
-        }
-
-        $user_id = intval($_GET['user_id']);
-        $existing_person_id = $this->get_person_by_user_id($user_id);
-
-        if ($existing_person_id) {
-            $person = get_post($existing_person_id);
-            wp_send_json(array(
-                'connected' => true,
-                'message' => sprintf(
-                    __('This user is already connected to another person: %s', 'lcd-people'),
-                    $person->post_title
-                )
-            ));
-        } else {
-            wp_send_json(array('connected' => false));
-        }
-    }
-
-    public function get_person_by_user_id($user_id) {
-        $args = array(
-            'post_type' => 'lcd_person',
-            'meta_key' => '_lcd_person_user_id',
-            'meta_value' => $user_id,
-            'posts_per_page' => 1,
-            'fields' => 'ids'
-        );
-
-        $query = new WP_Query($args);
-        return $query->posts ? $query->posts[0] : false;
-    }
-
-    public function handle_user_deletion($user_id) {
-        // Find and update any connected person
-        $person_id = $this->get_person_by_user_id($user_id);
-        if ($person_id) {
-            delete_post_meta($person_id, '_lcd_person_user_id');
-        }
-    }
-
-    public function handle_post_deletion($post_id) {
-        if (get_post_type($post_id) === 'lcd_person') {
-            // Remove connection from user if exists
-            $user_id = get_post_meta($post_id, '_lcd_person_user_id', true);
-            if ($user_id) {
-                delete_user_meta($user_id, self::USER_META_KEY);
-            }
-        }
-    }
-
-    public function add_user_column($columns) {
-        $columns['lcd_person'] = __('Person Record', 'lcd-people');
-        return $columns;
-    }
-
-    public function render_user_column($output, $column_name, $user_id) {
-        if ($column_name === 'lcd_person') {
-            $person_id = get_user_meta($user_id, self::USER_META_KEY, true);
-            if ($person_id) {
-                $person = get_post($person_id);
-                if ($person) {
-                    return sprintf(
-                        '<a href="%s">%s</a>',
-                        get_edit_post_link($person_id),
-                        esc_html($person->post_title)
-                    );
-                }
-            }
-            return '—'; // Em dash for no connection
-        }
-        return $output;
-    }
-
     public function handle_person_sync($person_id) {
-        $this->sync_person_to_sender($person_id);
+        $this->sender_handler->sync_person_to_sender($person_id);
     }
 
     public function handle_person_save($post_id, $post, $update) {
@@ -1259,7 +851,7 @@ class LCD_People {
 
         // Sync to Sender.net - disable automation triggers for admin updates
         // This sync will check for primary status internally
-        $this->sync_person_to_sender($post_id, false); 
+        $this->sender_handler->sync_person_to_sender($post_id, false); 
 
         // Sync record logging is handled within sync_person_to_sender
     }
@@ -1437,7 +1029,7 @@ class LCD_People {
         }
 
         // Try to find existing person by email
-        $person = $this->actblue_handler->get_person_by_email($person_data['email']);
+        $person = $this->get_person_by_email($person_data['email']);
 
         // Check for submission ID (entry_id) in the form data
         $submission_id = null;
@@ -1518,7 +1110,8 @@ class LCD_People {
                 $current_value = get_post_meta($person_id, '_lcd_person_' . $field, true);
                 
                 // Update if current field is empty, or if it's contact info that might have changed
-                if (empty($current_value) || in_array($field, array('phone', 'address'))) {
+                // Also update name fields from volunteer forms as they might provide more accurate info
+                if (empty($current_value) || in_array($field, array('phone', 'address', 'first_name', 'last_name'))) {
                     $fields_to_update[$field] = $value;
                 }
             }
@@ -1568,7 +1161,7 @@ class LCD_People {
         }
 
         // Sync to Sender.net with volunteer group (this will add volunteer group if not already present)
-        $this->sync_volunteer_to_sender($person_id);
+        $this->sender_handler->sync_volunteer_to_sender($person_id);
     }
 
     /**
@@ -1614,7 +1207,7 @@ class LCD_People {
         }
 
         // Sync to Sender.net with volunteer group
-        $this->sync_volunteer_to_sender($person_id);
+        $this->sender_handler->sync_volunteer_to_sender($person_id);
 
         return $person_id;
     }
@@ -1683,104 +1276,6 @@ class LCD_People {
             // No other primary - this person becomes primary
             update_post_meta($person_id, '_lcd_person_is_primary', '1');
             delete_post_meta($person_id, '_lcd_person_actual_primary_id');
-        }
-    }
-
-    /**
-     * Sync volunteer to Sender.net with volunteer group
-     */
-    private function sync_volunteer_to_sender($person_id) {
-        // Check if primary member
-        $is_primary = get_post_meta($person_id, '_lcd_person_is_primary', true);
-        if ($is_primary !== '1') {
-            $this->add_sync_record($person_id, 'Sender.net', false, 'Sync skipped: Not the primary member for this email.');
-            return false;
-        }
-
-        $token = get_option('lcd_people_sender_token');
-        $volunteer_group_id = get_option('lcd_people_sender_new_volunteer_group');
-        
-        if (empty($token) || empty($volunteer_group_id)) {
-            $this->add_sync_record($person_id, 'Sender.net', false, 'Volunteer sync skipped: Missing API token or volunteer group ID');
-            return false;
-        }
-
-        $email = get_post_meta($person_id, '_lcd_person_email', true);
-        if (empty($email)) {
-            $this->add_sync_record($person_id, 'Sender.net', false, 'No email address found');
-            return false;
-        }
-
-        // Get existing subscriber to preserve their groups
-        $existing_groups = array();
-        $response = wp_remote_get('https://api.sender.net/v2/subscribers/' . urlencode($email), array(
-            'headers' => array(
-                'Authorization' => 'Bearer ' . $token,
-                'Accept' => 'application/json'
-            )
-        ));
-
-        if (!is_wp_error($response) && wp_remote_retrieve_response_code($response) === 200) {
-            $body = json_decode(wp_remote_retrieve_body($response), true);
-            if (isset($body['data']['subscriber_tags'])) {
-                foreach ($body['data']['subscriber_tags'] as $tag) {
-                    $existing_groups[] = $tag['id'];
-                }
-            }
-        }
-
-        // Add volunteer group if not already present
-        if (!in_array($volunteer_group_id, $existing_groups)) {
-            $existing_groups[] = $volunteer_group_id;
-        }
-
-        $subscriber_data = array(
-            'email' => $email,
-            'firstname' => get_post_meta($person_id, '_lcd_person_first_name', true),
-            'lastname' => get_post_meta($person_id, '_lcd_person_last_name', true),
-            'groups' => $existing_groups,
-            'trigger_automation' => true,
-            'trigger_groups' => true
-        );
-
-        // Add phone if available
-        $phone = get_post_meta($person_id, '_lcd_person_phone', true);
-        if (!empty($phone)) {
-            // Format phone number
-            $phone = preg_replace('/[^0-9]/', '', $phone);
-            if (strlen($phone) === 10) {
-                $phone = '+1' . $phone;
-            } elseif (strlen($phone) === 11 && $phone[0] === '1') {
-                $phone = '+' . $phone;
-            }
-            $subscriber_data['phone'] = $phone;
-        }
-
-        // Update or create subscriber
-        $response = wp_remote_request('https://api.sender.net/v2/subscribers/' . urlencode($email), array(
-            'method' => 'PATCH',
-            'headers' => array(
-                'Authorization' => 'Bearer ' . $token,
-                'Content-Type' => 'application/json',
-                'Accept' => 'application/json'
-            ),
-            'body' => json_encode($subscriber_data)
-        ));
-
-        if (is_wp_error($response)) {
-            $this->add_sync_record($person_id, 'Sender.net', false, 'Volunteer sync failed: ' . $response->get_error_message());
-            return false;
-        }
-
-        $status = wp_remote_retrieve_response_code($response);
-        if ($status === 200 || $status === 201) {
-            $this->add_sync_record($person_id, 'Sender.net', true, 'Volunteer synced successfully');
-            return true;
-        } else {
-            $body = json_decode(wp_remote_retrieve_body($response), true);
-            $message = isset($body['message']) ? $body['message'] : 'Unknown error';
-            $this->add_sync_record($person_id, 'Sender.net', false, 'Volunteer sync failed. Status: ' . $status . ', Message: ' . $message);
-            return false;
         }
     }
 
@@ -1876,7 +1371,7 @@ class LCD_People {
         update_post_meta($person_id, '_lcd_person_dues_paid_via', '');
 
         // Sync to Sender.net
-        $sync_result = $this->sync_person_to_sender($person_id);
+        $sync_result = $this->sender_handler->sync_person_to_sender($person_id);
 
         if (!$sync_result) {
             error_log('Failed to sync cancelled membership to Sender.net for person ' . $person_id);
@@ -1900,88 +1395,13 @@ class LCD_People {
             wp_send_json_error(array('message' => __('Invalid person ID.', 'lcd-people')));
         }
 
-        // Get the new member group ID
-        $new_member_group = get_option('lcd_people_sender_new_member_group');
-        if (empty($new_member_group)) {
-            wp_send_json_error(array('message' => __('New member group ID not configured.', 'lcd-people')));
-        }
-
-        // Force remove and re-add the new member group
-        $token = get_option('lcd_people_sender_token');
-        if (empty($token)) {
-            wp_send_json_error(array('message' => __('Sender.net API token not configured.', 'lcd-people')));
-        }
-
-        $email = get_post_meta($person_id, '_lcd_person_email', true);
-        if (empty($email)) {
-            wp_send_json_error(array('message' => __('No email address found for this person.', 'lcd-people')));
-        }
-
-        // First, get current subscriber data
-        $response = wp_remote_get('https://api.sender.net/v2/subscribers/' . urlencode($email), array(
-            'headers' => array(
-                'Authorization' => 'Bearer ' . $token,
-                'Accept' => 'application/json'
-            )
-        ));
-
-        if (is_wp_error($response)) {
-            wp_send_json_error(array('message' => __('Failed to get subscriber data:', 'lcd-people') . ' ' . $response->get_error_message()));
-        }
-
-        $status = wp_remote_retrieve_response_code($response);
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-
-        if ($status !== 200 || !isset($body['data'])) {
-            wp_send_json_error(array('message' => __('Subscriber not found in Sender.net', 'lcd-people')));
-        }
-
-        $subscriber = $body['data'];
-        $groups = array();
+        // Use the sender handler to retrigger welcome automation
+        $result = $this->sender_handler->retrigger_welcome_automation($person_id);
         
-        // Get current groups, excluding the new member group
-        if (isset($subscriber['subscriber_tags'])) {
-            foreach ($subscriber['subscriber_tags'] as $tag) {
-                if ($tag['id'] !== $new_member_group) {
-                    $groups[] = $tag['id'];
-                }
-            }
-        }
-
-        // Add the new member group back
-        $groups[] = $new_member_group;
-
-        // Update subscriber with modified groups
-        $subscriber_data = array(
-            'groups' => $groups,
-            'trigger_automation' => true,
-            'trigger_groups' => true
-        );
-
-        $response = wp_remote_request('https://api.sender.net/v2/subscribers/' . urlencode($email), array(
-            'method' => 'PATCH',
-            'headers' => array(
-                'Authorization' => 'Bearer ' . $token,
-                'Content-Type' => 'application/json',
-                'Accept' => 'application/json'
-            ),
-            'body' => json_encode($subscriber_data)
-        ));
-
-        if (is_wp_error($response)) {
-            wp_send_json_error(array('message' => __('Failed to update subscriber:', 'lcd-people') . ' ' . $response->get_error_message()));
-        }
-
-        $status = wp_remote_retrieve_response_code($response);
-        
-        if ($status === 200) {
-            $this->add_sync_record($person_id, 'Sender.net', true, 'Welcome automation re-trigger attempted');
-            wp_send_json_success(array('message' => __('Welcome automation re-trigger attempted successfully.', 'lcd-people')));
+        if ($result['success']) {
+            wp_send_json_success(array('message' => $result['message']));
         } else {
-            $body = json_decode(wp_remote_retrieve_body($response), true);
-            $message = isset($body['message']) ? $body['message'] : __('Unknown error', 'lcd-people');
-            $this->add_sync_record($person_id, 'Sender.net', false, 'Failed to re-trigger welcome automation: ' . $message);
-            wp_send_json_error(array('message' => __('Failed to update subscriber. Status:', 'lcd-people') . ' ' . $status . ', ' . __('Message:', 'lcd-people') . ' ' . $message));
+            wp_send_json_error(array('message' => $result['message']));
         }
     }
 
@@ -2405,101 +1825,8 @@ class LCD_People {
             wp_send_json_error(array('message' => __('Permission denied.', 'lcd-people')), 403);
         }
 
-        // Query all published people
-        $args = array(
-            'post_type' => 'lcd_person',
-            'posts_per_page' => -1,
-            'post_status' => 'publish',
-            'fields' => 'ids', // Only need IDs
-        );
-        $all_people_query = new WP_Query($args);
-        $all_people_ids = $all_people_query->posts;
-
-        $results = array(
-            'total_found' => count($all_people_ids),
-            'attempted' => 0,
-            'synced' => 0,
-            'skipped_non_primary' => 0,
-            'skipped_no_email' => 0,
-            'failed' => 0,
-            'error_messages' => []
-        );
-
-        $results['backfilled_primary'] = 0;
-
-        if (empty($all_people_ids)) {
-            wp_send_json_success(array(
-                 'message' => __('No people found to sync.', 'lcd-people'),
-                 'results' => $results
-            ));
-        }
-
-        // Group by email
-        $email_groups = [];
-        $email_counts = [];
-        foreach ($all_people_ids as $person_id) {
-            $email = get_post_meta($person_id, '_lcd_person_email', true);
-            if (!empty($email)) {
-                $email = strtolower(trim($email)); // Normalize email
-                if (!isset($email_groups[$email])) {
-                    $email_groups[$email] = [];
-                    $email_counts[$email] = 0;
-                }
-                $email_groups[$email][] = $person_id;
-                $email_counts[$email]++;
-            }
-        }
-
-        // Backfill primary status for single-email users
-        foreach ($email_counts as $email => $count) {
-            if ($count === 1) {
-                $person_id = $email_groups[$email][0]; // Get the single ID for this email
-                $is_primary = get_post_meta($person_id, '_lcd_person_is_primary', true);
-                if ($is_primary !== '1') {
-                    // This person has a unique email but isn't primary - fix it.
-                    update_post_meta($person_id, '_lcd_person_is_primary', '1');
-                    delete_post_meta($person_id, '_lcd_person_actual_primary_id'); // Clean up just in case
-                    $results['backfilled_primary']++;
-                }
-            }
-            // If count > 1, the existing save/switch logic handles primary status.
-        }
-
-        foreach ($all_people_ids as $person_id) {
-            $email = get_post_meta($person_id, '_lcd_person_email', true);
-            if (empty($email)) {
-                $results['skipped_no_email']++;
-                continue; // Skip if no email
-            }
-
-            $is_primary = get_post_meta($person_id, '_lcd_person_is_primary', true);
-            if ($is_primary !== '1') {
-                $results['skipped_non_primary']++;
-                continue; // Skip if not primary
-            }
-
-            // If primary and has email, attempt sync
-            $results['attempted']++;
- 
-            
-            // Call the sync function (trigger_automation = false)
-            $sync_success = $this->sync_person_to_sender($person_id, false); 
-            
-            if ($sync_success) {
-                 $results['synced']++;
-            } else {
-                 $results['failed']++;
-                 // Try to grab the last error message for this person from sync_records if possible
-                 $sync_records = get_post_meta($person_id, '_lcd_person_sync_records', true);
-                 if (!empty($sync_records) && is_array($sync_records)) {
-                     $last_record = end($sync_records);
-                     if (isset($last_record['service']) && $last_record['service'] === 'Sender.net' && !$last_record['success']) {
-                         $results['error_messages'][$person_id] = get_the_title($person_id) . ': ' . $last_record['message'];
-                     }
-                 }
-            }
-            
-        }
+        // Use the sender handler to sync all people
+        $results = $this->sender_handler->sync_all_to_sender();
 
         $message = sprintf(
             __('Sync complete. Total People: %d. Backfilled Primary Status: %d. Attempted Sync (Primary with Email): %d. Synced Successfully: %d. Skipped (Non-Primary): %d. Skipped (No Email): %d. Failed: %d.', 'lcd-people'),
@@ -3389,6 +2716,243 @@ class LCD_People {
         );
 
         return get_posts($args);
+    }
+
+    public function change_title_placeholder($title) {
+        $screen = get_current_screen();
+        if ($screen && $screen->post_type === 'lcd_person') {
+            return __('Name will be auto-generated from First and Last Name', 'lcd-people');
+        }
+        return $title;
+    }
+
+    public function add_name_notice() {
+        $screen = get_current_screen();
+        if ($screen && $screen->post_type === 'lcd_person') {
+            $post = get_post();
+            // If a title is not yet set, show a notice
+            if (empty($post->post_title)) {
+                echo '<div class="notice notice-info inline"><p>' . __('The title will be automatically generated from the First and Last Name fields.', 'lcd-people') . '</p></div>';
+            } else {
+                // Display the title in header text
+                echo '<h1>' . esc_html($post->post_title) . '</h1>';
+            }
+        }
+    }
+
+    public function modify_post_title($data, $postarr) {
+        if ($data['post_type'] === 'lcd_person' && isset($_POST['lcd_person_first_name']) && isset($_POST['lcd_person_last_name'])) {
+            $first_name = sanitize_text_field($_POST['lcd_person_first_name']);
+            $last_name = sanitize_text_field($_POST['lcd_person_last_name']);
+            $data['post_title'] = $first_name . ' ' . $last_name;
+        }
+        return $data;
+    }
+
+    public function save_meta_box_data($post_id) {
+        if (!isset($_POST['lcd_person_meta_box_nonce'])) {
+            return;
+        }
+
+        if (!wp_verify_nonce($_POST['lcd_person_meta_box_nonce'], 'lcd_person_meta_box')) {
+            return;
+        }
+
+        if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
+            return;
+        }
+
+        if (!current_user_can('edit_post', $post_id)) {
+            return;
+        }
+
+        // Handle user connection/disconnection
+        $old_user_id = get_post_meta($post_id, '_lcd_person_user_id', true);
+        $new_user_id = isset($_POST['lcd_person_user_id']) ? sanitize_text_field($_POST['lcd_person_user_id']) : '';
+
+        if ($old_user_id !== $new_user_id) {
+            // Remove old connection if exists
+            if ($old_user_id) {
+                delete_user_meta($old_user_id, self::USER_META_KEY);
+            }
+
+            // Add new connection if exists
+            if ($new_user_id) {
+                // Check for existing connection
+                $existing_person_id = $this->get_person_by_user_id($new_user_id);
+                if ($existing_person_id && $existing_person_id !== $post_id) {
+                    // Don't save the new user_id if there's a duplicate connection
+                    return;
+                }
+                update_user_meta($new_user_id, self::USER_META_KEY, $post_id);
+            }
+        }
+
+        $fields = array(
+            'lcd_person_first_name',
+            'lcd_person_last_name',
+            'lcd_person_email',
+            'lcd_person_phone',
+            'lcd_person_address',
+            'lcd_person_membership_status',
+            'lcd_person_start_date',
+            'lcd_person_end_date',
+            'lcd_person_membership_type',
+            'lcd_person_user_id',
+            'lcd_person_dues_paid_via',
+            'lcd_person_actblue_lineitem_id',
+            'lcd_person_payment_note',
+            'lcd_person_latest_volunteer_submission_id'
+        );
+
+        foreach ($fields as $field) {
+            if (isset($_POST[$field])) {
+                update_post_meta(
+                    $post_id,
+                    '_' . $field,
+                    sanitize_text_field($_POST[$field])
+                );
+            }
+        }
+
+        // Handle the checkbox field separately since it won't be in $_POST if unchecked
+        $is_sustaining = isset($_POST['lcd_person_is_sustaining']) ? '1' : '0';
+        update_post_meta($post_id, '_lcd_person_is_sustaining', $is_sustaining);
+
+        // Handle Primary Member (Automatic Assignment)
+        $email = isset($_POST['lcd_person_email']) ? sanitize_email($_POST['lcd_person_email']) : '';
+        // $submitted_is_primary = isset($_POST['lcd_person_is_primary']) ? '1' : '0'; // Removed - no longer submitted
+        $is_primary_final = '0'; // Default to not primary
+
+        if (!empty($email)) {
+            // Find if another primary person exists with this email
+            $args = array(
+                'post_type' => 'lcd_person',
+                'posts_per_page' => 1,
+                'fields' => 'ids',
+                'post__not_in' => array($post_id), // Exclude current post
+                'meta_query' => array(
+                    'relation' => 'AND',
+                    array(
+                        'key' => '_lcd_person_email',
+                        'value' => $email,
+                        'compare' => '='
+                    ),
+                    array(
+                        'key' => '_lcd_person_is_primary',
+                        'value' => '1',
+                        'compare' => '='
+                    )
+                )
+            );
+            $existing_primary_query = new WP_Query($args);
+            $existing_primary_id = $existing_primary_query->posts ? $existing_primary_query->posts[0] : false;
+
+            if ($existing_primary_id) {
+                // Another primary exists, current post *must* be secondary
+                $is_primary_final = '0';
+                // Store the ID of the actual primary for display in the meta box notice
+                update_post_meta($post_id, '_lcd_person_actual_primary_id', $existing_primary_id);
+            } else {
+                // No other primary exists for this email, this one *must* be primary
+                $is_primary_final = '1';
+                delete_post_meta($post_id, '_lcd_person_actual_primary_id');
+            }
+           
+        } else {
+            // No email, cannot be primary
+            $is_primary_final = '0';
+            delete_post_meta($post_id, '_lcd_person_actual_primary_id');
+        }
+        update_post_meta($post_id, '_lcd_person_is_primary', $is_primary_final);
+
+        // If ActBlue line item ID is set, update the line item URL
+        if (isset($_POST['lcd_person_actblue_lineitem_id']) && !empty($_POST['lcd_person_actblue_lineitem_id'])) {
+            $lineitem_id = absint($_POST['lcd_person_actblue_lineitem_id']);
+            update_post_meta($post_id, '_lcd_person_actblue_lineitem_url', 
+                sprintf('https://secure.actblue.com/entities/155025/lineitems/%d', $lineitem_id)
+            );
+        } else {
+            delete_post_meta($post_id, '_lcd_person_actblue_lineitem_url');
+        }
+    }
+
+    public function ajax_check_user_connection() {
+        check_ajax_referer('lcd_people_user_search', 'nonce');
+
+        if (!current_user_can('edit_posts')) {
+            wp_die(-1);
+        }
+
+        $user_id = intval($_GET['user_id']);
+        $existing_person_id = $this->get_person_by_user_id($user_id);
+
+        if ($existing_person_id) {
+            $person = get_post($existing_person_id);
+            wp_send_json(array(
+                'connected' => true,
+                'message' => sprintf(
+                    __('This user is already connected to another person: %s', 'lcd-people'),
+                    $person->post_title
+                )
+            ));
+        } else {
+            wp_send_json(array('connected' => false));
+        }
+    }
+
+    public function get_person_by_user_id($user_id) {
+        $args = array(
+            'post_type' => 'lcd_person',
+            'meta_key' => '_lcd_person_user_id',
+            'meta_value' => $user_id,
+            'posts_per_page' => 1,
+            'fields' => 'ids'
+        );
+
+        $query = new WP_Query($args);
+        return $query->posts ? $query->posts[0] : false;
+    }
+
+    public function handle_user_deletion($user_id) {
+        // Find and update any connected person
+        $person_id = $this->get_person_by_user_id($user_id);
+        if ($person_id) {
+            delete_post_meta($person_id, '_lcd_person_user_id');
+        }
+    }
+
+    public function handle_post_deletion($post_id) {
+        if (get_post_type($post_id) === 'lcd_person') {
+            // Remove connection from user if exists
+            $user_id = get_post_meta($post_id, '_lcd_person_user_id', true);
+            if ($user_id) {
+                delete_user_meta($user_id, self::USER_META_KEY);
+            }
+        }
+    }
+
+    public function add_user_column($columns) {
+        $columns['lcd_person'] = __('Person Record', 'lcd-people');
+        return $columns;
+    }
+
+    public function render_user_column($output, $column_name, $user_id) {
+        if ($column_name === 'lcd_person') {
+            $person_id = get_user_meta($user_id, self::USER_META_KEY, true);
+            if ($person_id) {
+                $person = get_post($person_id);
+                if ($person) {
+                    return sprintf(
+                        '<a href="%s">%s</a>',
+                        get_edit_post_link($person_id),
+                        esc_html($person->post_title)
+                    );
+                }
+            }
+            return '—'; // Em dash for no connection
+        }
+        return $output;
     }
 }
 
