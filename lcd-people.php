@@ -1003,8 +1003,30 @@ class LCD_People {
                 )
             );
             
-            if (!empty($form_data[$form_field_underscore])) {
-                $person_data[$person_field] = $form_data[$form_field_underscore];
+            // Handle name field components (e.g., name-1_first_name, name-1_last_name)
+            if (strpos($form_field, '_first_name') !== false || strpos($form_field, '_last_name') !== false) {
+                // Extract the base name field (e.g., "name-1" from "name-1_first_name")
+                $base_field = str_replace(array('_first_name', '_last_name', '_middle_name'), '', $form_field);
+                $base_field_underscore = str_replace('-', '_', $base_field);
+                
+                // Check if the base name field exists in form data
+                if (isset($form_data[$base_field_underscore]) && is_array($form_data[$base_field_underscore])) {
+                    $name_data = $form_data[$base_field_underscore];
+                    
+                    // Extract the specific name component
+                    if (strpos($form_field, '_first_name') !== false && isset($name_data['first-name'])) {
+                        $person_data[$person_field] = $name_data['first-name'];
+                    } elseif (strpos($form_field, '_last_name') !== false && isset($name_data['last-name'])) {
+                        $person_data[$person_field] = $name_data['last-name'];
+                    } elseif (strpos($form_field, '_middle_name') !== false && isset($name_data['middle-name'])) {
+                        $person_data[$person_field] = $name_data['middle-name'];
+                    }
+                }
+            } else {
+                // Handle regular fields
+                if (!empty($form_data[$form_field_underscore])) {
+                    $person_data[$person_field] = $form_data[$form_field_underscore];
+                }
             }
         }
         
