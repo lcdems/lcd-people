@@ -98,29 +98,8 @@ class LCD_People_ActBlue_Handler {
         // Try to find existing person by email AND name first
         $person = $this->get_person_by_email($donor['email'], $donor['firstname'], $donor['lastname']);
         
-        // If no exact name match found, try finding by email only
-        if (!$person) {
-            $args = array(
-                'post_type' => 'lcd_person',
-                'posts_per_page' => -1,
-                'meta_query' => array(
-                    array(
-                        'key' => '_lcd_person_email',
-                        'value' => $donor['email'],
-                        'compare' => '='
-                    )
-                )
-            );
-            
-            $email_matches = get_posts($args);
-            
-            // Only use email match if exactly one person found
-            if (count($email_matches) === 1) {
-                $person = $email_matches[0];
-            }
-        }
-        
-
+        // If no exact name match found, we'll create a new person record
+        // This allows couples to have separate person records even with the same email
         if ($person) {
             // Update existing person (found by email+name)
             $this->update_person_from_actblue($person->ID, $donor, $contribution, $lineitems);
@@ -196,6 +175,16 @@ class LCD_People_ActBlue_Handler {
             
             if ($existing_user) {
                 $user_id = $existing_user->ID;
+                
+                // Check if this user is already linked to another person
+                $existing_person_id = get_user_meta($user_id, self::USER_META_KEY, true);
+                
+                if (empty($existing_person_id)) {
+                    // This user isn't linked to any person yet, so link it to this person
+                    update_post_meta($person_id, '_lcd_person_user_id', $user_id);
+                    update_user_meta($user_id, self::USER_META_KEY, $person_id);
+                }
+                // If user is already linked to another person, we don't link this person to avoid conflicts
             } else {
                 // Temporarily disable the user_register hook to prevent duplicate person creation
                 remove_action('user_register', array($this->main_plugin, 'handle_user_registration'));
@@ -232,13 +221,11 @@ class LCD_People_ActBlue_Handler {
                 if (is_wp_error($user_id)) {
                     error_log('Failed to create WordPress user for existing ActBlue donor: ' . $user_id->get_error_message());
                     $user_id = null;
+                } else {
+                    // Link the new WordPress user to this person
+                    update_post_meta($person_id, '_lcd_person_user_id', $user_id);
+                    update_user_meta($user_id, self::USER_META_KEY, $person_id);
                 }
-            }
-
-            // Link the WordPress user to the person if we have a valid user
-            if ($user_id && !is_wp_error($user_id)) {
-                update_post_meta($person_id, '_lcd_person_user_id', $user_id);
-                update_user_meta($user_id, self::USER_META_KEY, $person_id);
             }
         }
 
@@ -295,7 +282,7 @@ class LCD_People_ActBlue_Handler {
      * Create person from ActBlue data
      */
     public function create_person_from_actblue($donor, $contribution, $lineitem) {
-        // First check if a WordPress user with this email already exists
+        // Check if a WordPress user with this email already exists
         $existing_user = get_user_by('email', $donor['email']);
         
         if ($existing_user) {
@@ -367,9 +354,17 @@ class LCD_People_ActBlue_Handler {
         update_post_meta($person_id, '_lcd_person_end_date', date('Y-m-d', strtotime($current_date . ' +1 year')));
 
         // Link the WordPress user to the person if we have a valid user
+        // Note: For shared emails, only the first person will be linked to the WordPress user
         if ($user_id && !is_wp_error($user_id)) {
-            update_post_meta($person_id, '_lcd_person_user_id', $user_id);
-            update_user_meta($user_id, self::USER_META_KEY, $person_id);
+            // Check if this user is already linked to another person
+            $existing_person_id = get_user_meta($user_id, self::USER_META_KEY, true);
+            
+            if (empty($existing_person_id)) {
+                // This user isn't linked to any person yet, so link it to this person
+                update_post_meta($person_id, '_lcd_person_user_id', $user_id);
+                update_user_meta($user_id, self::USER_META_KEY, $person_id);
+            }
+            // If user is already linked to another person, we don't link this person to avoid conflicts
         }
 
         // Store the ActBlue lineitem URL for reference
@@ -397,7 +392,7 @@ class LCD_People_ActBlue_Handler {
 
         // Check and potentially update Primary Status (Automatic Assignment)
         $email = $donor['email'];
-        // Find if *another* primary person exists with this email (shouldn't for a new person, but check anyway)
+        // Find if *another* primary person exists with this email
          $args = array(
             'post_type' => 'lcd_person',
             'posts_per_page' => 1,
