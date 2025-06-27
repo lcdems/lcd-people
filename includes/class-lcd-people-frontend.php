@@ -50,6 +50,7 @@ class LCD_People_Frontend {
     public function register_page_template($templates) {
         // Add our template to the list of available templates
         $templates['template-member-profile.php'] = __('Member Profile', 'lcd-people');
+        $templates['template-claim-account.php'] = __('Claim Account', 'lcd-people');
         return $templates;
     }
     
@@ -75,6 +76,14 @@ class LCD_People_Frontend {
             }
         }
         
+        if ('template-claim-account.php' === $page_template) {
+            $template_path = plugin_dir_path(dirname(__FILE__)) . 'templates/template-claim-account.php';
+            
+            if (file_exists($template_path)) {
+                return $template_path;
+            }
+        }
+        
         return $template;
     }
     
@@ -82,10 +91,13 @@ class LCD_People_Frontend {
      * Enqueue frontend assets
      */
     public function enqueue_frontend_assets() {
-        // Only load on profile pages
+        // Only load on profile pages and claim account pages
         $current_post = get_post();
-        if (!is_page_template('template-member-profile.php') && 
-            (!$current_post || !has_shortcode($current_post->post_content, 'lcd_member_profile'))) {
+        $is_claim_page = is_page_template('template-claim-account.php');
+        $is_profile_page = is_page_template('template-member-profile.php');
+        $has_profile_shortcode = $current_post && has_shortcode($current_post->post_content, 'lcd_member_profile');
+        
+        if (!$is_profile_page && !$is_claim_page && !$has_profile_shortcode) {
             return;
         }
         
@@ -95,6 +107,33 @@ class LCD_People_Frontend {
             array(),
             '1.0.0'
         );
+        
+        // Load claim account specific assets if on claim account page
+        if (is_page_template('template-claim-account.php')) {
+            wp_enqueue_style(
+                'lcd-people-claim-account',
+                plugins_url('/assets/css/claim-account.css', dirname(__FILE__)),
+                array(),
+                '1.0.0'
+            );
+            
+            wp_enqueue_script(
+                'lcd-people-claim-account',
+                plugins_url('/assets/js/claim-account.js', dirname(__FILE__)),
+                array('jquery'),
+                '1.0.0',
+                true
+            );
+            
+            wp_localize_script('lcd-people-claim-account', 'lcdClaimAccountVars', array(
+                'ajaxurl' => admin_url('admin-ajax.php'),
+                'nonce' => wp_create_nonce('lcd_claim_account'),
+                'login_url' => wp_login_url(),
+                'reset_password_url' => wp_lostpassword_url(),
+                'contact_email' => get_option('admin_email', 'info@example.com'),
+                'member_dashboard_url' => home_url('/member-dashboard'),
+            ));
+        }
         
         wp_enqueue_script(
             'lcd-people-frontend',

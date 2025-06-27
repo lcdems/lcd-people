@@ -95,24 +95,39 @@ class LCD_People_ActBlue_Handler {
         $contribution = $params['contribution'];
         $lineitems = $params['lineitems'][0]; // We'll use the first lineitem
 
-        // Try to find existing person by email AND name first
+        // Try to find existing person using a better strategy:
+        // 1. First try exact name + email match
         $person = $this->get_person_by_email($donor['email'], $donor['firstname'], $donor['lastname']);
         
-        // If no exact name match found, we'll create a new person record
-        // This allows couples to have separate person records even with the same email
+        // 2. If no exact match, try to find the primary person for this email
+        if (!$person) {
+            $person = $this->get_primary_person_by_email($donor['email']);
+        }
+        
+        // 3. If still no match, look for any person with this email (for shared emails)
+        if (!$person) {
+            $person = $this->get_person_by_email($donor['email']);
+        }
+        
         if ($person) {
-            // Update existing person (found by email+name)
+            // Update existing person
             $this->update_person_from_actblue($person->ID, $donor, $contribution, $lineitems);
             $this->add_sync_record($person->ID, 'ActBlue', true, 'Person updated successfully');
-            $response_message = 'Person updated successfully';
+            $response_message = 'Person updated successfully (ID: ' . $person->ID . ')';
+            
+            // Fix any duplicate primary status issues for this email
+            $this->fix_duplicate_primary_status($donor['email']);
         } else {
-            // Create new person
+            // Create new person only if absolutely no record exists for this email
             $person_id = $this->create_person_from_actblue($donor, $contribution, $lineitems);
             if (is_wp_error($person_id)) {
                 return $person_id;
             }
             $this->add_sync_record($person_id, 'ActBlue', true, 'New person created successfully');
-            $response_message = 'New person created successfully';
+            $response_message = 'New person created successfully (ID: ' . $person_id . ')';
+            
+            // Fix any duplicate primary status issues for this email (shouldn't be needed for new, but just in case)
+            $this->fix_duplicate_primary_status($donor['email']);
         }
 
         return array(
@@ -156,6 +171,37 @@ class LCD_People_ActBlue_Handler {
             'post_type' => 'lcd_person',
             'posts_per_page' => 1, // We only expect one match with email+name
             'meta_query' => $meta_query
+        );
+
+        $query = new WP_Query($args);
+        return $query->posts ? $query->posts[0] : null;
+    }
+    
+    /**
+     * Get the primary person record for an email address
+     * Only returns a person if they are marked as primary for the email
+     */
+    private function get_primary_person_by_email($email) {
+        if (empty($email)) {
+            return null;
+        }
+
+        $args = array(
+            'post_type' => 'lcd_person',
+            'posts_per_page' => 1,
+            'meta_query' => array(
+                'relation' => 'AND',
+                array(
+                    'key' => '_lcd_person_email',
+                    'value' => $email,
+                    'compare' => '='
+                ),
+                array(
+                    'key' => '_lcd_person_is_primary',
+                    'value' => '1',
+                    'compare' => '='
+                )
+            )
         );
 
         $query = new WP_Query($args);
@@ -273,6 +319,19 @@ class LCD_People_ActBlue_Handler {
             if (!empty($donor['country']) && $donor['country'] !== 'United States') $address .= "\n" . $donor['country'];
             
             update_post_meta($person_id, '_lcd_person_address', $address);
+        }
+
+        // Ensure this person is set as primary if no other primary exists for this email
+        $is_primary = get_post_meta($person_id, '_lcd_person_is_primary', true);
+        if ($is_primary !== '1') {
+            // Check if there's already a primary person for this email
+            $existing_primary = $this->get_primary_person_by_email($donor['email']);
+            if (!$existing_primary) {
+                // No primary exists, make this person primary
+                update_post_meta($person_id, '_lcd_person_is_primary', '1');
+                delete_post_meta($person_id, '_lcd_person_actual_primary_id');
+                $this->add_sync_record($person_id, 'ActBlue', true, 'Person updated and set as primary (no existing primary found)');
+            }
         }
 
         do_action('lcd_person_actblue_updated', $person_id, $donor, $contribution, $lineitem);
@@ -433,6 +492,110 @@ class LCD_People_ActBlue_Handler {
         return $person_id;
     }
     
+    /**
+     * Fix duplicate primary status for an email - ensure only one primary exists
+     * This is helpful for cleaning up existing duplicate situations
+     */
+    public function fix_duplicate_primary_status($email) {
+        if (empty($email)) {
+            return false;
+        }
+
+        // Get all people with this email
+        $args = array(
+            'post_type' => 'lcd_person',
+            'posts_per_page' => -1,
+            'post_status' => 'publish',
+            'meta_query' => array(
+                array(
+                    'key' => '_lcd_person_email',
+                    'value' => $email,
+                    'compare' => '='
+                )
+            )
+        );
+
+        $people = get_posts($args);
+        
+        if (count($people) <= 1) {
+            // Only one or no person with this email, ensure the one person is primary
+            if (count($people) === 1) {
+                update_post_meta($people[0]->ID, '_lcd_person_is_primary', '1');
+                delete_post_meta($people[0]->ID, '_lcd_person_actual_primary_id');
+            }
+            return true;
+        }
+
+        // Multiple people with same email - determine who should be primary
+        $current_primaries = array();
+        $all_person_ids = array();
+        
+        foreach ($people as $person) {
+            $all_person_ids[] = $person->ID;
+            $is_primary = get_post_meta($person->ID, '_lcd_person_is_primary', true);
+            if ($is_primary === '1') {
+                $current_primaries[] = $person->ID;
+            }
+        }
+
+        if (count($current_primaries) === 1) {
+            // Exactly one primary exists - set others as secondary
+            $primary_id = $current_primaries[0];
+            foreach ($all_person_ids as $person_id) {
+                if ($person_id !== $primary_id) {
+                    update_post_meta($person_id, '_lcd_person_is_primary', '0');
+                    update_post_meta($person_id, '_lcd_person_actual_primary_id', $primary_id);
+                }
+            }
+        } elseif (count($current_primaries) === 0) {
+            // No primary - make the most recent active member primary
+            $best_candidate = null;
+            foreach ($people as $person) {
+                $status = get_post_meta($person->ID, '_lcd_person_membership_status', true);
+                $user_id = get_post_meta($person->ID, '_lcd_person_user_id', true);
+                
+                // Prefer active members with WordPress accounts
+                if ($status === 'active' && !empty($user_id)) {
+                    $best_candidate = $person->ID;
+                    break;
+                }
+                // Then prefer active members without accounts
+                if ($status === 'active' && !$best_candidate) {
+                    $best_candidate = $person->ID;
+                }
+                // Finally, just pick the first one if no active members
+                if (!$best_candidate) {
+                    $best_candidate = $person->ID;
+                }
+            }
+            
+            // Set the best candidate as primary
+            if ($best_candidate) {
+                update_post_meta($best_candidate, '_lcd_person_is_primary', '1');
+                delete_post_meta($best_candidate, '_lcd_person_actual_primary_id');
+                
+                // Set others as secondary
+                foreach ($all_person_ids as $person_id) {
+                    if ($person_id !== $best_candidate) {
+                        update_post_meta($person_id, '_lcd_person_is_primary', '0');
+                        update_post_meta($person_id, '_lcd_person_actual_primary_id', $best_candidate);
+                    }
+                }
+            }
+        } else {
+            // Multiple primaries - keep the first one, make others secondary
+            $keep_primary = $current_primaries[0];
+            foreach ($current_primaries as $i => $primary_id) {
+                if ($i > 0) {
+                    update_post_meta($primary_id, '_lcd_person_is_primary', '0');
+                    update_post_meta($primary_id, '_lcd_person_actual_primary_id', $keep_primary);
+                }
+            }
+        }
+
+        return true;
+    }
+
     /**
      * Add sync record (delegate to main plugin)
      */

@@ -18,12 +18,14 @@ require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-frontend.php
 require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-settings.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-actblue-handler.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-sender-handler.php';
+require_once plugin_dir_path(__FILE__) . 'admin/class-people-email-admin.php';
 
 class LCD_People {
     private static $instance = null;
     private $settings;
     private $actblue_handler;
     private $sender_handler;
+    private $email_admin;
     const USER_META_KEY = '_lcd_person_id';
 
     public static function get_instance() {
@@ -42,7 +44,11 @@ class LCD_People {
         
         // Initialize Sender.net handler
         $this->sender_handler = new LCD_People_Sender_Handler($this);
-       
+        
+        // Initialize Email Admin (only in admin)
+        if (is_admin()) {
+            $this->email_admin = LCD_People_Email_Admin::get_instance($this);
+        }
         
         add_action('init', array($this, 'register_post_type'));
         add_action('init', array($this, 'register_taxonomies'));
@@ -130,6 +136,19 @@ class LCD_People {
         // Add registration hooks
         add_action('user_register', array($this, 'handle_user_registration'));
         add_action('wp_login', array($this, 'handle_user_login_check'), 10, 2);
+        
+        // Add claim account AJAX handlers (both logged-in and non-logged-in users)
+        add_action('wp_ajax_lcd_send_claim_verification_email', array($this, 'ajax_send_claim_verification_email'));
+        add_action('wp_ajax_nopriv_lcd_send_claim_verification_email', array($this, 'ajax_send_claim_verification_email'));
+        add_action('wp_ajax_lcd_verify_claim_token', array($this, 'ajax_verify_claim_token'));
+        add_action('wp_ajax_nopriv_lcd_verify_claim_token', array($this, 'ajax_verify_claim_token'));
+        add_action('wp_ajax_lcd_claim_create_account_with_token', array($this, 'ajax_claim_create_account_with_token'));
+        add_action('wp_ajax_nopriv_lcd_claim_create_account_with_token', array($this, 'ajax_claim_create_account_with_token'));
+        
+        // Include fix duplicates utility
+        if (file_exists(plugin_dir_path(__FILE__) . 'fix-duplicates.php')) {
+            include_once plugin_dir_path(__FILE__) . 'fix-duplicates.php';
+        }
     }
 
     public function enqueue_admin_scripts($hook) {
@@ -182,11 +201,11 @@ class LCD_People {
                 true
             );
 
-            // Enqueue our admin script with select2 as dependency
+            // Enqueue our admin script with select2 and modal system as dependencies
             wp_enqueue_script(
                 'lcd-people-admin',
                 plugins_url('assets/js/admin.js', __FILE__),
-                array('jquery', 'jquery-ui-dialog', 'select2'),
+                array('jquery', 'jquery-ui-dialog', 'select2', 'lcd-modal-system-admin'),
                 '1.0.0',
                 true
             );
@@ -919,6 +938,37 @@ class LCD_People {
             'post_type' => 'lcd_person',
             'posts_per_page' => 1, // We only expect one match with email+name
             'meta_query' => $meta_query
+        );
+
+        $query = new WP_Query($args);
+        return $query->posts ? $query->posts[0] : null;
+    }
+
+    /**
+     * Get the primary person record for an email address
+     * Only returns a person if they are marked as primary for the email
+     */
+    private function get_primary_person_by_email($email) {
+        if (empty($email)) {
+            return null;
+        }
+
+        $args = array(
+            'post_type' => 'lcd_person',
+            'posts_per_page' => 1,
+            'meta_query' => array(
+                'relation' => 'AND',
+                array(
+                    'key' => '_lcd_person_email',
+                    'value' => $email,
+                    'compare' => '='
+                ),
+                array(
+                    'key' => '_lcd_person_is_primary',
+                    'value' => '1',
+                    'compare' => '='
+                )
+            )
         );
 
         $query = new WP_Query($args);
@@ -2759,6 +2809,146 @@ class LCD_People {
     }
 
     /**
+     * AJAX handler for sending claim verification email
+     */
+    public function ajax_send_claim_verification_email() {
+        // Check if we have POST data
+        if (empty($_POST)) {
+            wp_send_json_error(array('message' => __('No data received.', 'lcd-people')));
+        }
+        
+        // Verify nonce
+        $nonce = isset($_POST['nonce']) ? $_POST['nonce'] : (isset($_POST['_ajax_nonce']) ? $_POST['_ajax_nonce'] : '');
+        if (!wp_verify_nonce($nonce, 'lcd_claim_account')) {
+            wp_send_json_error(array('message' => __('Security check failed.', 'lcd-people')));
+        }
+
+        $email = sanitize_email($_POST['email']);
+        if (empty($email)) {
+            wp_send_json_error(array('message' => __('Please provide a valid email address.', 'lcd-people')));
+        }
+
+        // Always send success response for security (don't reveal if email exists)
+        $this->send_claim_verification_email($email);
+        
+        wp_send_json_success(array(
+            'message' => __('Verification email sent successfully.', 'lcd-people')
+        ));
+    }
+
+    /**
+     * AJAX handler for verifying claim token
+     */
+    public function ajax_verify_claim_token() {
+        // Check if we have POST data
+        if (empty($_POST)) {
+            wp_send_json_error(array('message' => __('No data received.', 'lcd-people')));
+        }
+        
+        // Verify nonce
+        $nonce = isset($_POST['nonce']) ? $_POST['nonce'] : (isset($_POST['_ajax_nonce']) ? $_POST['_ajax_nonce'] : '');
+        if (!wp_verify_nonce($nonce, 'lcd_claim_account')) {
+            wp_send_json_error(array('message' => __('Security check failed.', 'lcd-people')));
+        }
+
+        $token = sanitize_text_field($_POST['token']);
+        if (empty($token)) {
+            wp_send_json_error(array('message' => __('Invalid token.', 'lcd-people')));
+        }
+
+        $person_data = $this->verify_claim_token($token);
+        if (!$person_data) {
+            wp_send_json_error(array('message' => __('Invalid or expired token. Please request a new verification email.', 'lcd-people')));
+        }
+
+        wp_send_json_success(array(
+            'person' => $person_data
+        ));
+    }
+
+    /**
+     * AJAX handler for creating account with token
+     */
+    public function ajax_claim_create_account_with_token() {
+        // Check if we have POST data
+        if (empty($_POST)) {
+            wp_send_json_error(array('message' => __('No data received.', 'lcd-people')));
+        }
+        
+        // Verify nonce
+        $nonce = isset($_POST['nonce']) ? $_POST['nonce'] : (isset($_POST['_ajax_nonce']) ? $_POST['_ajax_nonce'] : '');
+        if (!wp_verify_nonce($nonce, 'lcd_claim_account')) {
+            wp_send_json_error(array('message' => __('Security check failed.', 'lcd-people')));
+        }
+
+        $token = sanitize_text_field($_POST['token']);
+        $password = $_POST['password']; // Don't sanitize password
+
+        // Validate inputs
+        if (empty($token) || empty($password)) {
+            wp_send_json_error(array('message' => __('Missing required information.', 'lcd-people')));
+        }
+
+        // Verify token and get person data
+        $person_data = $this->verify_claim_token($token);
+        if (!$person_data) {
+            wp_send_json_error(array('message' => __('Invalid or expired token. Please request a new verification email.', 'lcd-people')));
+        }
+
+        $person_id = $person_data['id'];
+        $email = $person_data['email'];
+
+        // Check if user already exists (final validation)
+        $existing_user = get_user_by('email', $email);
+        if ($existing_user) {
+            wp_send_json_error(array('message' => __('A user account already exists for this email address.', 'lcd-people')));
+        }
+
+        // Create user account
+        $user_data = array(
+            'user_login' => $email,
+            'user_email' => $email,
+            'user_pass' => $password,
+            'first_name' => $person_data['first_name'],
+            'last_name' => $person_data['last_name'],
+            'display_name' => $person_data['name'],
+            'role' => 'subscriber'
+        );
+
+        $user_id = wp_insert_user($user_data);
+
+        if (is_wp_error($user_id)) {
+            wp_send_json_error(array('message' => __('Failed to create user account: ', 'lcd-people') . $user_id->get_error_message()));
+        }
+
+        // Connect user to person record
+        update_post_meta($person_id, '_lcd_person_user_id', $user_id);
+        update_user_meta($user_id, self::USER_META_KEY, $person_id);
+
+        // Set registration date if not already set
+        $registration_date = get_post_meta($person_id, '_lcd_person_registration_date', true);
+        if (empty($registration_date)) {
+            update_post_meta($person_id, '_lcd_person_registration_date', current_time('Y-m-d'));
+        }
+
+        // Delete the used token
+        $this->delete_claim_token($token);
+
+        // Log the user in
+        wp_set_current_user($user_id);
+        wp_set_auth_cookie($user_id, true);
+
+        // Fire action for other plugins/themes to hook into
+        do_action('lcd_person_claimed_account', $person_id, $user_id);
+
+        wp_send_json_success(array(
+            'message' => __('Account created successfully! You are now logged in.', 'lcd-people'),
+            'user_id' => $user_id,
+            'person_id' => $person_id
+        ));
+    }
+
+    /**
      * Manually connect a user to a person record
      * Useful for admin functions or bulk operations
      */
@@ -2818,6 +3008,161 @@ class LCD_People {
 
         return get_posts($args);
     }
+
+    /**
+     * Send claim verification email with appropriate content based on user/person status
+     */
+    private function send_claim_verification_email($email) {
+        // Check what exists for this email
+        $user = get_user_by('email', $email);
+        $primary_person = $this->get_primary_person_by_email($email);
+        
+        $site_name = get_bloginfo('name');
+        $site_url = home_url();
+        $contact_email = get_option('admin_email');
+        
+        // Prepare common template variables
+        $template_vars = array(
+            'site_name' => $site_name,
+            'site_url' => $site_url,
+            'contact_email' => $contact_email,
+            'login_url' => wp_login_url(),
+            'reset_password_url' => wp_lostpassword_url(),
+            'membership_url' => home_url('/membership'),
+            'volunteer_url' => home_url('/volunteer'),
+            'events_url' => home_url('/events'),
+            'profile_url' => home_url('/profile')
+        );
+        
+        if ($user) {
+            // User account exists - send login instructions
+            return $this->get_email_admin()->send_people_email('claim_existing_user', $email, $template_vars);
+            
+        } elseif ($primary_person) {
+            // Primary person exists, no user account - send account creation link
+            $token = $this->generate_claim_token($primary_person->ID);
+            $create_account_url = add_query_arg('token', $token, get_permalink(get_page_by_path('claim-account')));
+            
+            $first_name = get_post_meta($primary_person->ID, '_lcd_person_first_name', true);
+            $last_name = get_post_meta($primary_person->ID, '_lcd_person_last_name', true);
+            $membership_status = get_post_meta($primary_person->ID, '_lcd_person_membership_status', true);
+            
+            // Add person-specific template variables
+            $expiry_hours = 24; // default
+            if ($this->get_email_admin()) {
+                $expiry_hours = $this->get_email_admin()->get_token_expiry_hours();
+            }
+            
+            $template_vars = array_merge($template_vars, array(
+                'first_name' => $first_name,
+                'last_name' => $last_name,
+                'name' => trim($first_name . ' ' . $last_name),
+                'email' => $email,
+                'membership_status' => $membership_status ? ucfirst($membership_status) : 'Member',
+                'create_account_url' => $create_account_url,
+                'member_id' => $primary_person->ID,
+                'token_expiry_hours' => $expiry_hours
+            ));
+            
+            return $this->get_email_admin()->send_people_email('claim_create_account', $email, $template_vars);
+            
+        } else {
+            // No records found - send instructions to join
+            return $this->get_email_admin()->send_people_email('claim_no_records', $email, $template_vars);
+        }
+    }
+
+    /**
+     * Get email admin instance
+     */
+    public function get_email_admin() {
+        if (!$this->email_admin && is_admin()) {
+            $this->email_admin = LCD_People_Email_Admin::get_instance($this);
+        }
+        return $this->email_admin;
+    }
+
+    /**
+     * Generate a secure token for account creation
+     */
+    private function generate_claim_token($person_id) {
+        $token = wp_generate_password(32, false);
+        
+        // Get token expiry hours from email admin settings
+        $expiry_hours = 24; // default
+        if ($this->get_email_admin()) {
+            $expiry_hours = $this->get_email_admin()->get_token_expiry_hours();
+        }
+        
+        $expires = time() + ($expiry_hours * 60 * 60);
+        
+        // Store token in transient
+        set_transient('lcd_claim_token_' . $token, array(
+            'person_id' => $person_id,
+            'expires' => $expires,
+            'created' => time()
+        ), $expiry_hours * 60 * 60);
+        
+        return $token;
+    }
+
+    /**
+     * Verify claim token and return person data
+     */
+    private function verify_claim_token($token) {
+        $token_data = get_transient('lcd_claim_token_' . $token);
+        
+        if (!$token_data || !isset($token_data['person_id'])) {
+            return false;
+        }
+        
+        // Check if token has expired
+        if (time() > $token_data['expires']) {
+            delete_transient('lcd_claim_token_' . $token);
+            return false;
+        }
+        
+        $person_id = $token_data['person_id'];
+        $person = get_post($person_id);
+        
+        if (!$person || $person->post_type !== 'lcd_person') {
+            delete_transient('lcd_claim_token_' . $token);
+            return false;
+        }
+        
+        // Verify person is still primary
+        $is_primary = get_post_meta($person_id, '_lcd_person_is_primary', true);
+        if ($is_primary !== '1') {
+            delete_transient('lcd_claim_token_' . $token);
+            return false;
+        }
+        
+        // Return person data
+        $first_name = get_post_meta($person_id, '_lcd_person_first_name', true);
+        $last_name = get_post_meta($person_id, '_lcd_person_last_name', true);
+        $email = get_post_meta($person_id, '_lcd_person_email', true);
+        $phone = get_post_meta($person_id, '_lcd_person_phone', true);
+        $membership_status = get_post_meta($person_id, '_lcd_person_membership_status', true);
+        
+        return array(
+            'id' => $person_id,
+            'first_name' => $first_name,
+            'last_name' => $last_name,
+            'name' => trim($first_name . ' ' . $last_name),
+            'email' => $email,
+            'phone' => $phone,
+            'membership_status' => $membership_status ? ucfirst($membership_status) : ''
+        );
+    }
+
+    /**
+     * Delete a used claim token
+     */
+    private function delete_claim_token($token) {
+        delete_transient('lcd_claim_token_' . $token);
+    }
+
+
 
     public function change_title_placeholder($title) {
         $screen = get_current_screen();

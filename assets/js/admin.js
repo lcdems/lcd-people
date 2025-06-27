@@ -59,47 +59,48 @@ jQuery(document).ready(function($) {
         }
     });
 
-    // Membership functionality
+    // Membership functionality - Using Unified Modal System
     function showActBlueEditDialog() {
         const currentId = $('#lcd_person_actblue_lineitem_id').val();
-        const dialog = $('<div>', {
+        
+        const content = `
+            <div class="actblue-edit-content">
+                <p>Enter the ActBlue Line Item ID for this membership payment:</p>
+                <div class="form-group" style="margin: 15px 0;">
+                    <input type="number" id="actblue_lineitem_id_edit" value="${currentId || ''}" 
+                           style="width: 100%; padding: 8px; border: 1px solid #ccd0d4; border-radius: 4px;">
+                </div>
+                <p class="description" style="color: #666; font-size: 13px;">
+                    You can find this ID in the URL of the payment in ActBlue
+                </p>
+            </div>
+        `;
+
+        LCDModal.open({
             title: currentId ? 'Edit ActBlue Payment' : 'Add ActBlue Payment',
-            class: 'actblue-edit-dialog'
-        }).appendTo('body');
-
-        const content = $('<div>', {
-            class: 'actblue-edit-content'
-        }).appendTo(dialog);
-
-        content.append(
-            $('<p>').text('Enter the ActBlue Line Item ID for this membership payment:'),
-            $('<input>', {
-                type: 'number',
-                id: 'actblue_lineitem_id_edit',
-                value: currentId || ''
-            }),
-            $('<p>', { class: 'description' }).text('You can find this ID in the URL of the payment in ActBlue')
-        );
-
-        dialog.dialog({
-            modal: true,
-            width: 400,
-            buttons: {
-                Save: function() {
-                    const lineItemId = $('#actblue_lineitem_id_edit').val();
-                    if (lineItemId) {
-                        $('#lcd_person_actblue_lineitem_id').val(lineItemId);
-                        updateActBlueView(lineItemId);
-                    }
-                    $(this).dialog('close');
+            content: content,
+            size: 'medium',
+            className: 'actblue-edit-modal',
+            buttons: [
+                {
+                    text: 'Cancel',
+                    className: 'lcd-btn-secondary',
+                    action: 'cancel'
                 },
-                Cancel: function() {
-                    $(this).dialog('close');
+                {
+                    text: 'Save',
+                    className: 'lcd-btn-primary',
+                    action: 'save',
+                    callback: function() {
+                        const lineItemId = $('#actblue_lineitem_id_edit').val();
+                        if (lineItemId) {
+                            $('#lcd_person_actblue_lineitem_id').val(lineItemId);
+                            updateActBlueView(lineItemId);
+                        }
+                        return true; // Close modal
+                    }
                 }
-            },
-            close: function() {
-                $(this).dialog('destroy').remove();
-            }
+            ]
         });
     }
 
@@ -223,48 +224,83 @@ jQuery(document).ready(function($) {
         }
     });
 
-    // Initialize the re-trigger welcome dialog
-    var $retriggerDialog = $('#lcd-retrigger-welcome-dialog').dialog({
-        autoOpen: false,
-        modal: true,
-        buttons: {
-            "Re-trigger": function() {
-                var dialog = this;
-                var $button = $('#lcd-retrigger-welcome');
-                var postId = $('#post_ID').val();
-
-                $button.prop('disabled', true);
-                
-                $.post(lcdPeople.ajaxurl, {
-                    action: 'lcd_retrigger_welcome',
-                    person_id: postId,
-                    nonce: lcdPeople.nonce
-                })
-                .done(function(response) {
-                    if (response.success) {
-                        alert(response.data.message);
-                        location.reload();
-                    } else {
-                        alert(response.data.message);
-                    }
-                })
-                .fail(function() {
-                    alert(lcdPeople.strings.retriggerError);
-                })
-                .always(function() {
-                    $button.prop('disabled', false);
-                    $(dialog).dialog('close');
-                });
-            },
-            "Cancel": function() {
-                $(this).dialog('close');
-            }
-        }
-    });
-
-    // Handle re-trigger welcome button click
+    // Handle re-trigger welcome button click - Using Unified Modal System
     $('#lcd-retrigger-welcome').on('click', function(e) {
         e.preventDefault();
-        $retriggerDialog.dialog('open');
+        
+        const content = `
+            <div class="retrigger-welcome-content">
+                <p>This will attempt to re-trigger the welcome automation for this member.</p>
+                <p><strong>Note:</strong> The automation will only run if the member has not been through it before.</p>
+            </div>
+        `;
+
+        LCDModal.open({
+            title: 'Re-trigger Welcome Automation?',
+            content: content,
+            size: 'medium',
+            className: 'retrigger-welcome-modal',
+            buttons: [
+                {
+                    text: 'Cancel',
+                    className: 'lcd-btn-secondary',
+                    action: 'cancel'
+                },
+                {
+                    text: 'Re-trigger',
+                    className: 'lcd-btn-primary',
+                    action: 'retrigger',
+                    callback: function(e, modal) {
+                        const $button = $('#lcd-retrigger-welcome');
+                        const postId = $('#post_ID').val();
+
+                        // Show loading state
+                        modal.find('.lcd-modal-body').html(`
+                            <div class="loading-content" style="text-align: center; padding: 20px;">
+                                <div class="spinner" style="margin-bottom: 15px;"></div>
+                                <p>Re-triggering welcome automation...</p>
+                            </div>
+                        `);
+                        modal.find('.lcd-modal-footer').remove();
+
+                        $button.prop('disabled', true);
+                        
+                        $.post(lcdPeople.ajaxurl, {
+                            action: 'lcd_retrigger_welcome',
+                            person_id: postId,
+                            nonce: lcdPeople.nonce
+                        })
+                        .done(function(response) {
+                            if (response.success) {
+                                LCDModal.alert({
+                                    title: 'Success',
+                                    content: response.data.message,
+                                    className: 'success-modal'
+                                });
+                                setTimeout(() => location.reload(), 2000);
+                            } else {
+                                LCDModal.alert({
+                                    title: 'Error',
+                                    content: response.data.message,
+                                    className: 'error-modal'
+                                });
+                            }
+                        })
+                        .fail(function() {
+                            LCDModal.alert({
+                                title: 'Error',
+                                content: lcdPeople.strings.retriggerError,
+                                className: 'error-modal'
+                            });
+                        })
+                        .always(function() {
+                            $button.prop('disabled', false);
+                        });
+                        
+                        return true; // Close modal
+                    }
+                }
+            ]
+        });
     });
 }); 
