@@ -146,6 +146,15 @@ class LCD_People_Frontend {
         wp_localize_script('lcd-people-frontend', 'lcdPeopleFrontend', array(
             'ajaxurl' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce('lcd_people_frontend'),
+            'subscription_nonce' => wp_create_nonce('lcd_subscription_nonce'),
+            'strings' => array(
+                'loading' => __('Loading...', 'lcd-people'),
+                'error' => __('An error occurred. Please try again.', 'lcd-people'),
+                'confirm_unsubscribe' => __('Are you sure you want to unsubscribe from all email communications? This action cannot be undone.', 'lcd-people'),
+                'updating' => __('Updating...', 'lcd-people'),
+                'success' => __('Changes saved successfully!', 'lcd-people'),
+                'update_preferences_btn' => __('Update Preferences', 'lcd-people')
+            )
         ));
     }
     
@@ -301,6 +310,14 @@ class LCD_People_Frontend {
                             <?php _e('Volunteering Info', 'lcd-people'); ?>
                         </button>
                     <?php endif; ?>
+                    <button class="lcd-tab-button" 
+                            data-tab="subscriptions"
+                            role="tab"
+                            aria-controls="subscriptions-tab"
+                            aria-selected="false"
+                            id="subscriptions-tab-button">
+                        <?php _e('Email Preferences', 'lcd-people'); ?>
+                    </button>
                 </div>
                 
                 <!-- Membership Tab Content -->
@@ -320,6 +337,14 @@ class LCD_People_Frontend {
                         <?php echo $this->render_volunteering_tab($person_id, $has_person_record); ?>
                     </div>
                 <?php endif; ?>
+                
+                <!-- Subscription Preferences Tab Content -->
+                <div class="lcd-tab-content" 
+                     id="subscriptions-tab"
+                     role="tabpanel"
+                     aria-labelledby="subscriptions-tab-button">
+                    <?php echo $this->render_subscription_preferences_tab($email); ?>
+                </div>
             </div>
         </div>
         <?php
@@ -760,6 +785,97 @@ class LCD_People_Frontend {
         }
 
         return $shifts;
+    }
+    
+    /**
+     * Render the subscription preferences tab content
+     */
+    private function render_subscription_preferences_tab($email) {
+        ob_start();
+        ?>
+        <div class="lcd-subscription-preferences">
+            <div id="subscription-loading" class="lcd-loading-state" style="display: none;">
+                <div class="lcd-spinner"></div>
+                <p><?php _e('Loading subscription preferences...', 'lcd-people'); ?></p>
+            </div>
+            
+            <div id="subscription-error" class="lcd-error-message" style="display: none;">
+                <p class="error-text"></p>
+                <button type="button" class="lcd-btn lcd-btn-secondary retry-btn">
+                    <?php _e('Try Again', 'lcd-people'); ?>
+                </button>
+            </div>
+            
+            <div id="subscription-form-container" style="display: none;">
+                <h3><?php _e('Email Subscription Preferences', 'lcd-people'); ?></h3>
+                <p><?php _e('Manage your email subscriptions and communication preferences below.', 'lcd-people'); ?></p>
+                
+                <form id="subscription-preferences-form">
+                    <div class="subscription-form-group">
+                        <label for="sub-email"><?php _e('Email Address', 'lcd-people'); ?></label>
+                        <input type="email" id="sub-email" name="email" readonly>
+                        <p class="description"><?php _e('Your email address cannot be changed here. Contact us if you need to update it.', 'lcd-people'); ?></p>
+                    </div>
+                    
+                    <div class="subscription-form-group">
+                        <label for="sub-first-name"><?php _e('First Name', 'lcd-people'); ?> <span class="required">*</span></label>
+                        <input type="text" id="sub-first-name" name="first_name" required>
+                    </div>
+                    
+                    <div class="subscription-form-group">
+                        <label for="sub-last-name"><?php _e('Last Name', 'lcd-people'); ?> <span class="required">*</span></label>
+                        <input type="text" id="sub-last-name" name="last_name" required>
+                    </div>
+                    
+                    <div class="subscription-form-group">
+                        <label for="sub-phone"><?php _e('Phone Number', 'lcd-people'); ?></label>
+                        <input type="tel" id="sub-phone" name="phone" placeholder="(555) 123-4567">
+                    </div>
+                    
+                    <div class="subscription-form-group">
+                        <label class="subscription-checkbox-label">
+                            <input type="checkbox" id="sub-sms-consent" name="sms_consent" value="1">
+                            <span class="checkmark"></span>
+                            <span class="consent-text">
+                                <?php _e('I consent to receive text messages. Message and data rates may apply. Reply STOP to opt out.', 'lcd-people'); ?>
+                            </span>
+                        </label>
+                    </div>
+                    
+                    <div class="subscription-form-group">
+                        <label><?php _e('Email Interests', 'lcd-people'); ?></label>
+                        <div id="subscription-groups" class="subscription-checkbox-group">
+                            <!-- Groups will be populated via JavaScript -->
+                        </div>
+                    </div>
+                    
+                    <div class="subscription-form-actions">
+                        <button type="submit" class="lcd-btn lcd-btn-primary">
+                            <?php _e('Update Preferences', 'lcd-people'); ?>
+                        </button>
+                        <button type="button" id="unsubscribe-all-btn" class="lcd-btn lcd-btn-danger">
+                            <?php _e('Unsubscribe from All', 'lcd-people'); ?>
+                        </button>
+                    </div>
+                </form>
+                
+                <div id="subscription-success" class="lcd-success-message" style="display: none;">
+                    <h4><?php _e('Success!', 'lcd-people'); ?></h4>
+                    <p class="success-text"></p>
+                </div>
+            </div>
+            
+            <div id="subscription-not-found" class="lcd-info-message" style="display: none;">
+                <h4><?php _e('No Subscription Found', 'lcd-people'); ?></h4>
+                <p><?php _e('You are not currently subscribed to our email list.', 'lcd-people'); ?></p>
+                <p><?php _e('Would you like to subscribe?', 'lcd-people'); ?></p>
+                <a href="#" class="lcd-btn lcd-btn-primary" data-modal="optin-form">
+                    <?php _e('Subscribe Now', 'lcd-people'); ?>
+                </a>
+            </div>
+        </div>
+        <?php
+        return ob_get_clean();
     }
     
     /**
