@@ -199,6 +199,31 @@ class LCD_People_Settings {
             'default' => 'No Thanks, Email Only'
         ));
 
+        // Conversion tracking settings
+        register_setting('lcd_people_sender_settings', 'lcd_people_optin_google_gtag_id', array(
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => ''
+        ));
+
+        register_setting('lcd_people_sender_settings', 'lcd_people_optin_google_conversion_label', array(
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => ''
+        ));
+
+        register_setting('lcd_people_sender_settings', 'lcd_people_optin_facebook_pixel_id', array(
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => ''
+        ));
+
+        register_setting('lcd_people_sender_settings', 'lcd_people_optin_conversion_value', array(
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => ''
+        ));
+
         add_settings_section(
             'lcd_people_sender_section',
             __('Sender.net Integration Settings', 'lcd-people'),
@@ -294,6 +319,46 @@ class LCD_People_Settings {
             array($this, 'render_optin_sms_disclaimer_field'),
             'lcd-people-sender-settings',
             'lcd_people_optin_section'
+        );
+
+        // Conversion Tracking Section
+        add_settings_section(
+            'lcd_people_tracking_section',
+            __('Conversion Tracking', 'lcd-people'),
+            array($this, 'render_tracking_settings_section'),
+            'lcd-people-sender-settings'
+        );
+
+        add_settings_field(
+            'lcd_people_optin_google_gtag_id',
+            __('Google Analytics 4 Tag ID', 'lcd-people'),
+            array($this, 'render_google_gtag_id_field'),
+            'lcd-people-sender-settings',
+            'lcd_people_tracking_section'
+        );
+
+        add_settings_field(
+            'lcd_people_optin_google_conversion_label',
+            __('Google Ads Conversion Label', 'lcd-people'),
+            array($this, 'render_google_conversion_label_field'),
+            'lcd-people-sender-settings',
+            'lcd_people_tracking_section'
+        );
+
+        add_settings_field(
+            'lcd_people_optin_facebook_pixel_id',
+            __('Facebook Pixel ID', 'lcd-people'),
+            array($this, 'render_facebook_pixel_id_field'),
+            'lcd-people-sender-settings',
+            'lcd_people_tracking_section'
+        );
+
+        add_settings_field(
+            'lcd_people_optin_conversion_value',
+            __('Conversion Value', 'lcd-people'),
+            array($this, 'render_conversion_value_field'),
+            'lcd-people-sender-settings',
+            'lcd_people_tracking_section'
         );
 
         // Forminator settings
@@ -803,6 +868,45 @@ class LCD_People_Settings {
         <?php
     }
 
+    public function render_tracking_settings_section() {
+        ?>
+        <p><?php _e('Configure conversion tracking for Google Analytics, Google Ads, and Facebook Pixel. Events will be fired when users complete the opt-in process.', 'lcd-people'); ?></p>
+        <p><?php _e('Make sure your tracking codes are already installed on your site for these events to be recorded properly.', 'lcd-people'); ?></p>
+        <?php
+    }
+
+    public function render_google_gtag_id_field() {
+        $value = get_option('lcd_people_optin_google_gtag_id', '');
+        ?>
+        <input type="text" name="lcd_people_optin_google_gtag_id" value="<?php echo esc_attr($value); ?>" class="regular-text" placeholder="G-XXXXXXXXXX">
+        <p class="description"><?php _e('Your Google Analytics 4 Measurement ID (e.g., G-XXXXXXXXXX). Used for Google Analytics events and Google Ads conversions.', 'lcd-people'); ?></p>
+        <?php
+    }
+
+    public function render_google_conversion_label_field() {
+        $value = get_option('lcd_people_optin_google_conversion_label', '');
+        ?>
+        <input type="text" name="lcd_people_optin_google_conversion_label" value="<?php echo esc_attr($value); ?>" class="regular-text" placeholder="AbC123dEfG">
+        <p class="description"><?php _e('Optional: Google Ads conversion label for tracking conversions (e.g., AbC123dEfG). Leave empty to only track Google Analytics events.', 'lcd-people'); ?></p>
+        <?php
+    }
+
+    public function render_facebook_pixel_id_field() {
+        $value = get_option('lcd_people_optin_facebook_pixel_id', '');
+        ?>
+        <input type="text" name="lcd_people_optin_facebook_pixel_id" value="<?php echo esc_attr($value); ?>" class="regular-text" placeholder="1234567890123456">
+        <p class="description"><?php _e('Your Facebook Pixel ID (numeric, e.g., 1234567890123456). Used to track Facebook conversion events.', 'lcd-people'); ?></p>
+        <?php
+    }
+
+    public function render_conversion_value_field() {
+        $value = get_option('lcd_people_optin_conversion_value', '');
+        ?>
+        <input type="text" name="lcd_people_optin_conversion_value" value="<?php echo esc_attr($value); ?>" class="regular-text" placeholder="0">
+        <p class="description"><?php _e('Optional: Monetary value to assign to conversions (e.g., 5.00). Leave empty for no value. Used by both Google Ads and Facebook.', 'lcd-people'); ?></p>
+        <?php
+    }
+
     /**
      * Maybe migrate old group settings to new format
      */
@@ -1207,6 +1311,20 @@ class LCD_People_Settings {
                     <li><strong><?php _e('JavaScript:', 'lcd-people'); ?></strong> <code>LCDModal.open({type: 'optin-form'})</code> - <?php _e('Trigger programmatically', 'lcd-people'); ?></li>
                 </ul>
                 <p class="description"><?php _e('The form will display groups in the order configured above, with default selections pre-checked. Email and SMS auto-add groups will be automatically assigned based on user selections. All opt-ins will trigger welcome automations.', 'lcd-people'); ?></p>
+                
+                <?php if (get_option('lcd_people_optin_google_gtag_id') || get_option('lcd_people_optin_facebook_pixel_id')): ?>
+                <div style="margin-top: 15px; padding: 10px; background: #d1ecf1; border-left: 4px solid #bee5eb;">
+                    <h4 style="margin-top: 0;"><?php _e('Conversion Tracking Active', 'lcd-people'); ?></h4>
+                    <p style="margin-bottom: 0;"><?php _e('Conversion events will be automatically fired when users complete the opt-in process:', 'lcd-people'); ?></p>
+                    <ul style="margin: 10px 0 0 20px;">
+                        <li><strong><?php _e('Email Step:', 'lcd-people'); ?></strong> <?php _e('Lead generation events (Google: generate_lead, Facebook: Lead)', 'lcd-people'); ?></li>
+                        <li><strong><?php _e('Final Success:', 'lcd-people'); ?></strong> <?php _e('Conversion events (Google: conversion, Facebook: CompleteRegistration)', 'lcd-people'); ?></li>
+                        <?php if (get_option('lcd_people_optin_google_conversion_label')): ?>
+                        <li><strong><?php _e('Google Ads:', 'lcd-people'); ?></strong> <?php _e('Conversion action will be fired with configured label', 'lcd-people'); ?></li>
+                        <?php endif; ?>
+                    </ul>
+                </div>
+                <?php endif; ?>
             </div>
         </div>
         <?php

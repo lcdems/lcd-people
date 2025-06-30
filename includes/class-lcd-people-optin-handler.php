@@ -70,6 +70,12 @@ class LCD_People_Optin_Handler {
                 'invalid_email' => __('Please enter a valid email address.', 'lcd-people'),
                 'required_fields' => __('Please fill in all required fields.', 'lcd-people'),
                 'success' => __('Thank you for joining our list!', 'lcd-people')
+            ),
+            'tracking' => array(
+                'google_gtag_id' => get_option('lcd_people_optin_google_gtag_id', ''),
+                'google_conversion_label' => get_option('lcd_people_optin_google_conversion_label', ''),
+                'facebook_pixel_id' => get_option('lcd_people_optin_facebook_pixel_id', ''),
+                'conversion_value' => get_option('lcd_people_optin_conversion_value', '')
             )
         ));
         
@@ -505,6 +511,18 @@ class LCD_People_Optin_Handler {
             
             init: function() {
                 this.bindEvents();
+                this.initTracking();
+            },
+            
+            initTracking: function() {
+                // Initialize tracking if IDs are configured
+                if (lcdOptinVars.tracking.google_gtag_id && typeof gtag === 'undefined' && typeof window.google_tag_manager === 'undefined') {
+                    console.log('LCD Opt-in: Google Analytics not detected. Make sure gtag is loaded.');
+                }
+                
+                if (lcdOptinVars.tracking.facebook_pixel_id && typeof fbq === 'undefined') {
+                    console.log('LCD Opt-in: Facebook Pixel not detected. Make sure fbq is loaded.');
+                }
             },
             
             bindEvents: function() {
@@ -576,6 +594,7 @@ class LCD_People_Optin_Handler {
                     .done(function(response) {
                         if (response.success) {
                             self.sessionKey = response.data.session_key;
+                            self.fireEmailOptinTracking();
                             self.showStep('sms');
                         } else {
                             self.showError(response.data.message || lcdOptinVars.strings.error);
@@ -604,6 +623,7 @@ class LCD_People_Optin_Handler {
                 jQuery.post(lcdOptinVars.ajaxurl, formData)
                     .done(function(response) {
                         if (response.success) {
+                            self.fireFinalConversionTracking(includeSMS);
                             self.showSuccess(response.data.message);
                         } else {
                             self.showError(response.data.message || lcdOptinVars.strings.error);
@@ -649,6 +669,103 @@ class LCD_People_Optin_Handler {
             hideError: function() {
                 jQuery('#lcd-optin-error').hide();
                 this.showStep(this.currentStep);
+            },
+            
+            fireEmailOptinTracking: function() {
+                // Fire lead generation event (email captured)
+                this.fireGoogleEvent('generate_lead', {
+                    event_category: 'engagement',
+                    event_label: 'email_optin_step'
+                });
+                
+                this.fireFacebookEvent('Lead', {
+                    content_name: 'Email Opt-in Step',
+                    content_category: 'Lead Generation'
+                });
+                
+                console.log('LCD Opt-in: Email step tracking events fired');
+            },
+            
+            fireFinalConversionTracking: function(includedSMS) {
+                var conversionValue = lcdOptinVars.tracking.conversion_value;
+                var eventLabel = includedSMS ? 'email_sms_conversion' : 'email_only_conversion';
+                var contentName = includedSMS ? 'Email + SMS Signup' : 'Email Signup';
+                
+                // Fire Google Analytics conversion
+                this.fireGoogleEvent('conversion', {
+                    event_category: 'engagement',
+                    event_label: eventLabel,
+                    value: conversionValue
+                });
+                
+                // Fire Google Ads conversion if configured
+                if (lcdOptinVars.tracking.google_conversion_label) {
+                    this.fireGoogleAdsConversion(conversionValue);
+                }
+                
+                // Fire Facebook conversion
+                this.fireFacebookEvent('CompleteRegistration', {
+                    content_name: contentName,
+                    content_category: 'Newsletter Signup',
+                    value: conversionValue
+                });
+                
+                console.log('LCD Opt-in: Final conversion tracking events fired (' + eventLabel + ')');
+            },
+            
+            fireGoogleEvent: function(eventName, parameters) {
+                if (!lcdOptinVars.tracking.google_gtag_id) return;
+                
+                if (typeof gtag === 'function') {
+                    gtag('event', eventName, parameters);
+                    console.log('LCD Opt-in: Google Analytics event fired - ' + eventName);
+                } else if (typeof window.dataLayer !== 'undefined') {
+                    // Fallback for GTM
+                    window.dataLayer.push({
+                        'event': 'lcd_optin_' + eventName,
+                        'event_category': parameters.event_category || 'engagement',
+                        'event_label': parameters.event_label || '',
+                        'value': parameters.value || ''
+                    });
+                    console.log('LCD Opt-in: GTM event fired - lcd_optin_' + eventName);
+                }
+            },
+            
+            fireGoogleAdsConversion: function(value) {
+                if (!lcdOptinVars.tracking.google_gtag_id || !lcdOptinVars.tracking.google_conversion_label) return;
+                
+                if (typeof gtag === 'function') {
+                    var conversionConfig = {
+                        'send_to': lcdOptinVars.tracking.google_gtag_id + '/' + lcdOptinVars.tracking.google_conversion_label
+                    };
+                    
+                    if (value && parseFloat(value) > 0) {
+                        conversionConfig.value = parseFloat(value);
+                        conversionConfig.currency = 'USD';
+                    }
+                    
+                    gtag('event', 'conversion', conversionConfig);
+                    console.log('LCD Opt-in: Google Ads conversion fired');
+                }
+            },
+            
+            fireFacebookEvent: function(eventName, parameters) {
+                if (!lcdOptinVars.tracking.facebook_pixel_id) return;
+                
+                if (typeof fbq === 'function') {
+                    var eventData = {
+                        content_name: parameters.content_name || '',
+                        content_category: parameters.content_category || ''
+                    };
+                    
+                    if (parameters.value && parseFloat(parameters.value) > 0) {
+                        eventData.value = parseFloat(parameters.value);
+                        eventData.currency = 'USD';
+                    }
+                    
+                    fbq('track', eventName, eventData);
+                    console.log('LCD Opt-in: Facebook Pixel event fired - ' + eventName);
+                }
             }
         };
         
