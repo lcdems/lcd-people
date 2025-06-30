@@ -22,6 +22,17 @@ class LCD_People_Settings {
         // Add settings page
         add_action('admin_menu', array($this, 'add_settings_page'));
         add_action('admin_init', array($this, 'register_settings'));
+        add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_scripts'));
+    }
+
+    /**
+     * Enqueue admin scripts
+     */
+    public function enqueue_admin_scripts($hook) {
+        // Only enqueue on our settings pages
+        if (strpos($hook, 'lcd-people-sender-settings') !== false) {
+            wp_enqueue_script('jquery-ui-sortable');
+        }
     }
 
     /**
@@ -130,16 +141,62 @@ class LCD_People_Settings {
             'default' => ''
         ));
 
-        register_setting('lcd_people_sender_settings', 'lcd_people_sender_new_member_group', array(
+        // Group assignments - replaces individual group settings
+        register_setting('lcd_people_sender_settings', 'lcd_people_sender_group_assignments', array(
+            'type' => 'array',
+            'sanitize_callback' => array($this, 'sanitize_group_assignments'),
+            'default' => array()
+        ));
+
+        // Opt-in form settings
+        register_setting('lcd_people_sender_settings', 'lcd_people_optin_groups', array(
+            'type' => 'array',
+            'sanitize_callback' => array($this, 'sanitize_optin_groups'),
+            'default' => array()
+        ));
+
+
+
+        register_setting('lcd_people_sender_settings', 'lcd_people_optin_main_disclaimer', array(
             'type' => 'string',
-            'sanitize_callback' => 'sanitize_text_field',
+            'sanitize_callback' => 'wp_kses_post',
             'default' => ''
         ));
 
-        register_setting('lcd_people_sender_settings', 'lcd_people_sender_new_volunteer_group', array(
+        register_setting('lcd_people_sender_settings', 'lcd_people_optin_sms_disclaimer', array(
+            'type' => 'string',
+            'sanitize_callback' => 'wp_kses_post',
+            'default' => ''
+        ));
+
+        register_setting('lcd_people_sender_settings', 'lcd_people_optin_email_title', array(
             'type' => 'string',
             'sanitize_callback' => 'sanitize_text_field',
-            'default' => ''
+            'default' => 'Join Our Email List'
+        ));
+
+        register_setting('lcd_people_sender_settings', 'lcd_people_optin_sms_title', array(
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => 'Stay Connected with SMS'
+        ));
+
+        register_setting('lcd_people_sender_settings', 'lcd_people_optin_email_cta', array(
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => 'Continue'
+        ));
+
+        register_setting('lcd_people_sender_settings', 'lcd_people_optin_sms_cta', array(
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => 'Join SMS List'
+        ));
+
+        register_setting('lcd_people_sender_settings', 'lcd_people_optin_skip_sms_cta', array(
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => 'No Thanks, Email Only'
         ));
 
         add_settings_section(
@@ -158,19 +215,85 @@ class LCD_People_Settings {
         );
 
         add_settings_field(
-            'lcd_people_sender_new_member_group',
-            __('New Member Group ID', 'lcd-people'),
-            array($this, 'render_new_member_group_field'),
+            'lcd_people_sender_group_assignments',
+            __('Group Assignments', 'lcd-people'),
+            array($this, 'render_group_assignments_field'),
             'lcd-people-sender-settings',
             'lcd_people_sender_section'
         );
 
+        // Opt-in Form Settings Section
+        add_settings_section(
+            'lcd_people_optin_section',
+            __('Opt-in Form Settings', 'lcd-people'),
+            array($this, 'render_optin_settings_section'),
+            'lcd-people-sender-settings'
+        );
+
         add_settings_field(
-            'lcd_people_sender_new_volunteer_group',
-            __('New Volunteer Group ID', 'lcd-people'),
-            array($this, 'render_new_volunteer_group_field'),
+            'lcd_people_optin_groups',
+            __('Available Groups for Opt-in', 'lcd-people'),
+            array($this, 'render_optin_groups_field'),
             'lcd-people-sender-settings',
-            'lcd_people_sender_section'
+            'lcd_people_optin_section'
+        );
+
+
+
+        add_settings_field(
+            'lcd_people_optin_email_title',
+            __('Email Step Title', 'lcd-people'),
+            array($this, 'render_optin_email_title_field'),
+            'lcd-people-sender-settings',
+            'lcd_people_optin_section'
+        );
+
+        add_settings_field(
+            'lcd_people_optin_sms_title',
+            __('SMS Step Title', 'lcd-people'),
+            array($this, 'render_optin_sms_title_field'),
+            'lcd-people-sender-settings',
+            'lcd_people_optin_section'
+        );
+
+        add_settings_field(
+            'lcd_people_optin_email_cta',
+            __('Email Step CTA Button', 'lcd-people'),
+            array($this, 'render_optin_email_cta_field'),
+            'lcd-people-sender-settings',
+            'lcd_people_optin_section'
+        );
+
+        add_settings_field(
+            'lcd_people_optin_sms_cta',
+            __('SMS Opt-in CTA Button', 'lcd-people'),
+            array($this, 'render_optin_sms_cta_field'),
+            'lcd-people-sender-settings',
+            'lcd_people_optin_section'
+        );
+
+        add_settings_field(
+            'lcd_people_optin_skip_sms_cta',
+            __('Skip SMS CTA Button', 'lcd-people'),
+            array($this, 'render_optin_skip_sms_cta_field'),
+            'lcd-people-sender-settings',
+            'lcd_people_optin_section'
+        );
+
+        add_settings_field(
+            'lcd_people_optin_main_disclaimer',
+            __('Main Form Disclaimer', 'lcd-people'),
+            array($this, 'render_optin_main_disclaimer_field'),
+            'lcd-people-sender-settings',
+            'lcd_people_optin_section'
+        );
+
+        add_settings_field(
+            'lcd_people_optin_sms_disclaimer',
+            __('SMS Checkbox Disclaimer', 'lcd-people'),
+            array($this, 'render_optin_sms_disclaimer_field'),
+            'lcd-people-sender-settings',
+            'lcd_people_optin_section'
         );
 
         // Forminator settings
@@ -220,12 +343,6 @@ class LCD_People_Settings {
         ?>
         <div class="wrap">
             <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
-            
-            <?php
-            if (isset($_POST['test_sender_connection']) && check_admin_referer('test_sender_connection', 'test_sender_nonce')) {
-                $this->test_sender_connection($_POST['test_email'], $_POST['test_firstname'], $_POST['test_lastname']);
-            }
-            ?>
 
             <form action="options.php" method="post">
                 <?php
@@ -233,34 +350,6 @@ class LCD_People_Settings {
                 do_settings_sections('lcd-people-actblue-settings');
                 submit_button();
                 ?>
-            </form>
-
-            <hr>
-
-            <h2><?php _e('Test Connection', 'lcd-people'); ?></h2>
-            <form method="post" action="">
-                <?php wp_nonce_field('test_sender_connection', 'test_sender_nonce'); ?>
-                <table class="form-table">
-                    <tr>
-                        <th><label for="test_email"><?php _e('Test Email', 'lcd-people'); ?></label></th>
-                        <td>
-                            <input type="email" name="test_email" id="test_email" class="regular-text" required>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th><label for="test_firstname"><?php _e('Test First Name', 'lcd-people'); ?></label></th>
-                        <td>
-                            <input type="text" name="test_firstname" id="test_firstname" class="regular-text" required>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th><label for="test_lastname"><?php _e('Test Last Name', 'lcd-people'); ?></label></th>
-                        <td>
-                            <input type="text" name="test_lastname" id="test_lastname" class="regular-text" required>
-                        </td>
-                    </tr>
-                </table>
-                <?php submit_button(__('Test Connection', 'lcd-people'), 'secondary', 'test_sender_connection'); ?>
             </form>
         </div>
         <?php
@@ -316,20 +405,527 @@ class LCD_People_Settings {
         <?php
     }
 
-    public function render_new_member_group_field() {
-        $group_id = get_option('lcd_people_sender_new_member_group');
+    public function render_group_assignments_field() {
+        $assignments = get_option('lcd_people_sender_group_assignments', array());
+        $available_groups = $this->get_sender_groups();
+        
+        // Migrate old settings to new format if needed
+        $this->maybe_migrate_group_settings($assignments);
+        
         ?>
-        <input type="text" name="lcd_people_sender_new_member_group" value="<?php echo esc_attr($group_id); ?>" class="regular-text">
-        <p class="description"><?php _e('The Sender.net group ID to add new members to (e.g. dw2kEJ)', 'lcd-people'); ?></p>
+        <div id="group-assignments-manager">
+            <?php if (empty($available_groups)): ?>
+                <p class="notice notice-error inline"><?php _e('No groups found - check your API token and debug log', 'lcd-people'); ?></p>
+            <?php else: ?>
+                <p class="description" style="margin-bottom: 15px;">
+                    <?php _e('Assign groups to different purposes. Each purpose can have different assignment rules.', 'lcd-people'); ?>
+                </p>
+                
+                <table class="widefat group-assignments-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 30%;"><?php _e('Group Name', 'lcd-people'); ?></th>
+                            <th style="width: 17%;"><?php _e('New Member', 'lcd-people'); ?><br><small><?php _e('(one only)', 'lcd-people'); ?></small></th>
+                            <th style="width: 17%;"><?php _e('New Volunteer', 'lcd-people'); ?><br><small><?php _e('(one only)', 'lcd-people'); ?></small></th>
+                            <th style="width: 18%;"><?php _e('Email Opt-in', 'lcd-people'); ?><br><small><?php _e('(auto-add)', 'lcd-people'); ?></small></th>
+                            <th style="width: 18%;"><?php _e('SMS Opt-in', 'lcd-people'); ?><br><small><?php _e('(auto-add)', 'lcd-people'); ?></small></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($available_groups as $group_id => $group_name): ?>
+                            <tr>
+                                <td>
+                                    <strong><?php echo esc_html($group_name); ?></strong><br>
+                                    <small class="group-id"><?php echo esc_html($group_id); ?></small>
+                                </td>
+                                <td class="assignment-cell">
+                                    <label>
+                                        <input type="radio" 
+                                               name="lcd_people_sender_group_assignments[new_member]" 
+                                               value="<?php echo esc_attr($group_id); ?>"
+                                               <?php checked($assignments['new_member'] ?? '', $group_id); ?>>
+                                        <?php _e('Assign', 'lcd-people'); ?>
+                                    </label>
+                                </td>
+                                <td class="assignment-cell">
+                                    <label>
+                                        <input type="radio" 
+                                               name="lcd_people_sender_group_assignments[new_volunteer]" 
+                                               value="<?php echo esc_attr($group_id); ?>"
+                                               <?php checked($assignments['new_volunteer'] ?? '', $group_id); ?>>
+                                        <?php _e('Assign', 'lcd-people'); ?>
+                                    </label>
+                                </td>
+                                <td class="assignment-cell">
+                                    <label>
+                                        <input type="checkbox" 
+                                               name="lcd_people_sender_group_assignments[email_optin][]" 
+                                               value="<?php echo esc_attr($group_id); ?>"
+                                               <?php checked(in_array($group_id, $assignments['email_optin'] ?? array())); ?>>
+                                        <?php _e('Auto-add', 'lcd-people'); ?>
+                                    </label>
+                                </td>
+                                <td class="assignment-cell">
+                                    <label>
+                                        <input type="checkbox" 
+                                               name="lcd_people_sender_group_assignments[sms_optin][]" 
+                                               value="<?php echo esc_attr($group_id); ?>"
+                                               <?php checked(in_array($group_id, $assignments['sms_optin'] ?? array())); ?>>
+                                        <?php _e('Auto-add', 'lcd-people'); ?>
+                                    </label>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+                
+                <div class="group-assignments-help" style="margin-top: 20px;">
+                    <h4><?php _e('Assignment Types Explained:', 'lcd-people'); ?></h4>
+                    <ul>
+                        <li><strong><?php _e('New Member:', 'lcd-people'); ?></strong> <?php _e('Automatically assigned when someone becomes a new member (triggers welcome automation)', 'lcd-people'); ?></li>
+                        <li><strong><?php _e('New Volunteer:', 'lcd-people'); ?></strong> <?php _e('Automatically assigned when someone signs up to volunteer', 'lcd-people'); ?></li>
+                        <li><strong><?php _e('Email Opt-in:', 'lcd-people'); ?></strong> <?php _e('Automatically added to all email opt-in submissions (hidden from user)', 'lcd-people'); ?></li>
+                        <li><strong><?php _e('SMS Opt-in:', 'lcd-people'); ?></strong> <?php _e('Automatically added when user opts into SMS messages', 'lcd-people'); ?></li>
+                    </ul>
+                </div>
+            <?php endif; ?>
+        </div>
+        
+        <style>
+        .group-assignments-table th {
+            text-align: center;
+            padding: 12px 8px;
+            background: #f9f9f9;
+        }
+        .group-assignments-table td {
+            padding: 12px 8px;
+            vertical-align: top;
+        }
+        .assignment-cell {
+            text-align: center;
+        }
+        .assignment-cell label {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .assignment-cell input {
+            margin-bottom: 5px;
+        }
+        .group-id {
+            color: #666;
+            font-family: monospace;
+        }
+        .group-assignments-help ul {
+            margin-left: 20px;
+        }
+        .group-assignments-help li {
+            margin-bottom: 8px;
+            line-height: 1.4;
+        }
+        </style>
+        
+        <p class="description">
+            <a href="<?php echo admin_url('edit.php?post_type=lcd_person&page=lcd-people-sender-settings&clear_cache=1'); ?>" onclick="return confirm('This will clear the groups cache and force a new API call. Continue?');">Clear Cache & Retry</a>
+            | Check your WordPress debug log for detailed API information.
+        </p>
         <?php
     }
 
-    public function render_new_volunteer_group_field() {
-        $group_id = get_option('lcd_people_sender_new_volunteer_group');
+    public function render_optin_settings_section() {
         ?>
-        <input type="text" name="lcd_people_sender_new_volunteer_group" value="<?php echo esc_attr($group_id); ?>" class="regular-text">
-        <p class="description"><?php _e('The Sender.net group ID to add new volunteers to (e.g. xY9mNp)', 'lcd-people'); ?></p>
+        <p><?php _e('Configure the settings for your custom opt-in form. This form will collect email addresses and optionally phone numbers, then sync them to your Sender.net groups.', 'lcd-people'); ?></p>
+        <p><?php _e('You can control which groups users can select from, the order they appear in, which ones are pre-selected by default, and which groups to automatically add to every submission behind the scenes.', 'lcd-people'); ?></p>
         <?php
+    }
+
+    public function render_optin_groups_field() {
+        $optin_groups = get_option('lcd_people_optin_groups', array());
+        $available_groups = $this->get_sender_groups();
+        
+        // Convert old format to new format if needed
+        if (!empty($optin_groups) && is_array($optin_groups) && isset($optin_groups[0]) && is_string($optin_groups[0])) {
+            // Old format - convert to new format
+            $new_format = array();
+            foreach ($optin_groups as $index => $group_id) {
+                $new_format[$group_id] = array(
+                    'order' => $index + 1,
+                    'default' => $index === 0 // First one is default
+                );
+            }
+            $optin_groups = $new_format;
+        }
+        
+        ?>
+        <div id="optin-groups-manager">
+            <?php if (empty($available_groups)): ?>
+                <p class="notice notice-error inline"><?php _e('No groups found - check your API token and debug log', 'lcd-people'); ?></p>
+            <?php else: ?>
+                <div class="groups-selector">
+                    <h4><?php _e('Add Groups', 'lcd-people'); ?></h4>
+                    <select id="add-group-select" style="width: 300px;">
+                        <option value=""><?php _e('Select a group to add...', 'lcd-people'); ?></option>
+                        <?php foreach ($available_groups as $group_id => $group_name): ?>
+                            <?php if (!isset($optin_groups[$group_id])): ?>
+                                <option value="<?php echo esc_attr($group_id); ?>"><?php echo esc_html($group_name); ?></option>
+                            <?php endif; ?>
+                        <?php endforeach; ?>
+                    </select>
+                    <button type="button" id="add-group-btn" class="button"><?php _e('Add Group', 'lcd-people'); ?></button>
+                </div>
+                
+                <div class="selected-groups" style="margin-top: 20px;">
+                    <h4><?php _e('Selected Groups (drag to reorder)', 'lcd-people'); ?></h4>
+                    <div id="sortable-groups" class="sortable-groups">
+                        <?php
+                        // Sort groups by order
+                        uasort($optin_groups, function($a, $b) {
+                            return ($a['order'] ?? 999) - ($b['order'] ?? 999);
+                        });
+                        
+                        foreach ($optin_groups as $group_id => $group_data):
+                            if (isset($available_groups[$group_id])):
+                        ?>
+                            <div class="group-item" data-group-id="<?php echo esc_attr($group_id); ?>">
+                                <span class="dashicons dashicons-menu drag-handle"></span>
+                                <span class="group-name"><?php echo esc_html($available_groups[$group_id]); ?></span>
+                                <label class="default-checkbox">
+                                    <input type="checkbox" name="lcd_people_optin_groups[<?php echo esc_attr($group_id); ?>][default]" 
+                                           value="1" <?php checked(!empty($group_data['default'])); ?>>
+                                    <?php _e('Default', 'lcd-people'); ?>
+                                </label>
+                                <button type="button" class="remove-group button-link-delete"><?php _e('Remove', 'lcd-people'); ?></button>
+                                <input type="hidden" name="lcd_people_optin_groups[<?php echo esc_attr($group_id); ?>][order]" 
+                                       value="<?php echo esc_attr($group_data['order'] ?? 1); ?>" class="group-order">
+                            </div>
+                        <?php 
+                            endif;
+                        endforeach; 
+                        ?>
+                    </div>
+                    <?php if (empty($optin_groups)): ?>
+                        <p class="no-groups-message"><?php _e('No groups selected. Add groups above.', 'lcd-people'); ?></p>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
+        </div>
+        
+        <p class="description"><?php _e('Select and configure which groups users can opt-in to. Groups are displayed as checkboxes in the order shown above. Check "Default" to pre-select a group.', 'lcd-people'); ?></p>
+        <p class="description">
+            <a href="<?php echo admin_url('edit.php?post_type=lcd_person&page=lcd-people-sender-settings&clear_cache=1'); ?>" onclick="return confirm('This will clear the groups cache and force a new API call. Continue?');">Clear Cache & Retry</a>
+            | Check your WordPress debug log for detailed API information.
+        </p>
+        
+        <style>
+        .sortable-groups {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: #fff;
+            max-width: 600px;
+        }
+        .group-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            background: #fff;
+        }
+        .group-item:last-child {
+            border-bottom: none;
+        }
+        .group-item:hover {
+            background: #f9f9f9;
+        }
+        .drag-handle {
+            cursor: move;
+            margin-right: 10px;
+            color: #ccc;
+        }
+        .group-name {
+            flex: 1;
+            font-weight: 500;
+        }
+        .default-checkbox {
+            margin: 0 15px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .remove-group {
+            color: #a00;
+            text-decoration: none;
+        }
+        .remove-group:hover {
+            color: #dc3232;
+        }
+        .no-groups-message {
+            padding: 20px;
+            text-align: center;
+            color: #666;
+            font-style: italic;
+        }
+        .ui-sortable-helper {
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        </style>
+        
+        <script>
+        jQuery(document).ready(function($) {
+            // Make groups sortable
+            $('#sortable-groups').sortable({
+                handle: '.drag-handle',
+                update: function(event, ui) {
+                    // Update order values
+                    $('#sortable-groups .group-item').each(function(index) {
+                        $(this).find('.group-order').val(index + 1);
+                    });
+                }
+            });
+            
+            // Add group functionality
+            $('#add-group-btn').click(function() {
+                var groupId = $('#add-group-select').val();
+                var groupName = $('#add-group-select option:selected').text();
+                
+                if (!groupId) return;
+                
+                var nextOrder = $('#sortable-groups .group-item').length + 1;
+                var groupHtml = '<div class="group-item" data-group-id="' + groupId + '">' +
+                    '<span class="dashicons dashicons-menu drag-handle"></span>' +
+                    '<span class="group-name">' + groupName + '</span>' +
+                    '<label class="default-checkbox">' +
+                        '<input type="checkbox" name="lcd_people_optin_groups[' + groupId + '][default]" value="1">' +
+                        '<?php _e('Default', 'lcd-people'); ?>' +
+                    '</label>' +
+                    '<button type="button" class="remove-group button-link-delete"><?php _e('Remove', 'lcd-people'); ?></button>' +
+                    '<input type="hidden" name="lcd_people_optin_groups[' + groupId + '][order]" value="' + nextOrder + '" class="group-order">' +
+                '</div>';
+                
+                $('#sortable-groups').append(groupHtml);
+                $('.no-groups-message').hide();
+                
+                // Remove from dropdown
+                $('#add-group-select option[value="' + groupId + '"]').remove();
+                $('#add-group-select').val('');
+                
+                // Refresh sortable
+                $('#sortable-groups').sortable('refresh');
+            });
+            
+            // Remove group functionality
+            $(document).on('click', '.remove-group', function() {
+                var groupItem = $(this).closest('.group-item');
+                var groupId = groupItem.data('group-id');
+                var groupName = groupItem.find('.group-name').text();
+                
+                // Add back to dropdown
+                $('#add-group-select').append('<option value="' + groupId + '">' + groupName + '</option>');
+                
+                // Remove from list
+                groupItem.remove();
+                
+                // Show no groups message if empty
+                if ($('#sortable-groups .group-item').length === 0) {
+                    $('.no-groups-message').show();
+                }
+                
+                // Update order values
+                $('#sortable-groups .group-item').each(function(index) {
+                    $(this).find('.group-order').val(index + 1);
+                });
+            });
+        });
+        </script>
+        <?php
+    }
+
+    public function render_optin_email_title_field() {
+        $value = get_option('lcd_people_optin_email_title', 'Join Our Email List');
+        ?>
+        <input type="text" name="lcd_people_optin_email_title" value="<?php echo esc_attr($value); ?>" class="regular-text">
+        <p class="description"><?php _e('Title shown on the first step of the opt-in form', 'lcd-people'); ?></p>
+        <?php
+    }
+
+    public function render_optin_sms_title_field() {
+        $value = get_option('lcd_people_optin_sms_title', 'Stay Connected with SMS');
+        ?>
+        <input type="text" name="lcd_people_optin_sms_title" value="<?php echo esc_attr($value); ?>" class="regular-text">
+        <p class="description"><?php _e('Title shown on the SMS opt-in step', 'lcd-people'); ?></p>
+        <?php
+    }
+
+    public function render_optin_email_cta_field() {
+        $value = get_option('lcd_people_optin_email_cta', 'Continue');
+        ?>
+        <input type="text" name="lcd_people_optin_email_cta" value="<?php echo esc_attr($value); ?>" class="regular-text">
+        <p class="description"><?php _e('Button text for the email step', 'lcd-people'); ?></p>
+        <?php
+    }
+
+    public function render_optin_sms_cta_field() {
+        $value = get_option('lcd_people_optin_sms_cta', 'Join SMS List');
+        ?>
+        <input type="text" name="lcd_people_optin_sms_cta" value="<?php echo esc_attr($value); ?>" class="regular-text">
+        <p class="description"><?php _e('Button text for opting into SMS', 'lcd-people'); ?></p>
+        <?php
+    }
+
+    public function render_optin_skip_sms_cta_field() {
+        $value = get_option('lcd_people_optin_skip_sms_cta', 'No Thanks, Email Only');
+        ?>
+        <input type="text" name="lcd_people_optin_skip_sms_cta" value="<?php echo esc_attr($value); ?>" class="regular-text">
+        <p class="description"><?php _e('Button text for skipping SMS opt-in', 'lcd-people'); ?></p>
+        <?php
+    }
+
+    public function render_optin_main_disclaimer_field() {
+        $value = get_option('lcd_people_optin_main_disclaimer', '');
+        if (empty($value)) {
+            $value = 'By signing up, you agree to receive emails from us. You can unsubscribe at any time.';
+        }
+        ?>
+        <textarea name="lcd_people_optin_main_disclaimer" rows="4" class="large-text"><?php echo esc_textarea($value); ?></textarea>
+        <p class="description"><?php _e('Disclaimer text shown at the bottom of the email opt-in form. HTML allowed.', 'lcd-people'); ?></p>
+        <?php
+    }
+
+    public function render_optin_sms_disclaimer_field() {
+        $value = get_option('lcd_people_optin_sms_disclaimer', '');
+        if (empty($value)) {
+            $value = 'By checking this box, you consent to receive text messages from us. Message and data rates may apply. Reply STOP to opt out at any time.';
+        }
+        ?>
+        <textarea name="lcd_people_optin_sms_disclaimer" rows="4" class="large-text"><?php echo esc_textarea($value); ?></textarea>
+        <p class="description"><?php _e('Required disclaimer text for SMS opt-in checkbox. This should include information about message rates and opt-out instructions. HTML allowed.', 'lcd-people'); ?></p>
+        <?php
+    }
+
+    /**
+     * Maybe migrate old group settings to new format
+     */
+    private function maybe_migrate_group_settings(&$assignments) {
+        // Only migrate if the new format is empty
+        if (!empty($assignments)) {
+            return;
+        }
+        
+        $migrated = false;
+        
+        // Migrate old new member group
+        $old_member_group = get_option('lcd_people_sender_new_member_group');
+        if (!empty($old_member_group)) {
+            $assignments['new_member'] = $old_member_group;
+            $migrated = true;
+        }
+        
+        // Migrate old new volunteer group
+        $old_volunteer_group = get_option('lcd_people_sender_new_volunteer_group');
+        if (!empty($old_volunteer_group)) {
+            $assignments['new_volunteer'] = $old_volunteer_group;
+            $migrated = true;
+        }
+        
+        // Migrate old auto-add groups
+        $old_auto_groups = get_option('lcd_people_optin_auto_groups', array());
+        if (!empty($old_auto_groups)) {
+            $assignments['email_optin'] = $old_auto_groups;
+            $migrated = true;
+        }
+        
+        // Save the migrated settings
+        if ($migrated) {
+            update_option('lcd_people_sender_group_assignments', $assignments);
+        }
+    }
+
+    public function sanitize_group_assignments($assignments) {
+        if (!is_array($assignments)) {
+            return array();
+        }
+        
+        $sanitized = array();
+        
+        // Sanitize single-select fields (radio buttons)
+        if (isset($assignments['new_member'])) {
+            $sanitized['new_member'] = sanitize_text_field($assignments['new_member']);
+        }
+        
+        if (isset($assignments['new_volunteer'])) {
+            $sanitized['new_volunteer'] = sanitize_text_field($assignments['new_volunteer']);
+        }
+        
+        // Sanitize multi-select fields (checkboxes)
+        if (isset($assignments['email_optin']) && is_array($assignments['email_optin'])) {
+            $sanitized['email_optin'] = array_map('sanitize_text_field', $assignments['email_optin']);
+        }
+        
+        if (isset($assignments['sms_optin']) && is_array($assignments['sms_optin'])) {
+            $sanitized['sms_optin'] = array_map('sanitize_text_field', $assignments['sms_optin']);
+        }
+        
+        return $sanitized;
+    }
+
+    public function sanitize_optin_groups($groups) {
+        if (!is_array($groups)) {
+            return array();
+        }
+        
+        $sanitized = array();
+        foreach ($groups as $group_id => $group_data) {
+            if (is_array($group_data)) {
+                $sanitized[sanitize_text_field($group_id)] = array(
+                    'order' => intval($group_data['order'] ?? 1),
+                    'default' => !empty($group_data['default'])
+                );
+            }
+        }
+        
+        return $sanitized;
+    }
+
+
+
+    private function get_sender_groups() {
+        $token = get_option('lcd_people_sender_token');
+        if (empty($token)) {
+            return array();
+        }
+
+        // Check for cached groups
+        $cached_groups = get_transient('lcd_people_sender_groups');
+        if ($cached_groups !== false) {
+            return $cached_groups;
+        }
+
+        $groups = array();
+        $response = wp_remote_get('https://api.sender.net/v2/groups', array(
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Content-Type' => 'application/json',
+                'Accept' => 'application/json'
+            ),
+            'timeout' => 15
+        ));
+
+        if (!is_wp_error($response) && wp_remote_retrieve_response_code($response) === 200) {
+            $body = json_decode(wp_remote_retrieve_body($response), true);
+            if (isset($body['data']) && is_array($body['data'])) {
+                foreach ($body['data'] as $group) {
+                    if (isset($group['id']) && isset($group['title'])) {
+                        $groups[$group['id']] = $group['title'];
+                    }
+                }
+            }
+        }
+
+        // Cache for 1 hour
+        set_transient('lcd_people_sender_groups', $groups, HOUR_IN_SECONDS);
+
+        return $groups;
     }
 
     public function sanitize_forminator_mappings($mappings) {
@@ -581,22 +1177,18 @@ class LCD_People_Settings {
         if (!current_user_can('manage_options')) {
             return;
         }
+        
+        // Handle cache clearing
+        if (isset($_GET['clear_cache']) && $_GET['clear_cache'] == '1') {
+            delete_transient('lcd_people_sender_groups');
+            add_settings_error('lcd_people_sender_settings', 'cache_cleared', __('Groups cache cleared. The API will be called again.', 'lcd-people'), 'updated');
+        }
+        
         ?>
         <div class="wrap">
             <h1><?php echo esc_html(get_admin_page_title()); ?></h1>
             
-            <?php
-            if (isset($_POST['test_sender_connection']) && check_admin_referer('test_sender_connection', 'test_sender_nonce')) {
-                $this->test_sender_connection(
-                    $_POST['test_email'], 
-                    $_POST['test_firstname'], 
-                    $_POST['test_lastname'],
-                    $_POST['test_previous_status'],
-                    $_POST['test_new_status']
-                );
-            }
-            settings_errors('lcd_people_sender_settings');
-            ?>
+            <?php settings_errors('lcd_people_sender_settings'); ?>
 
             <form action="options.php" method="post">
                 <?php
@@ -606,219 +1198,21 @@ class LCD_People_Settings {
                 ?>
             </form>
 
-            <hr>
-
-            <h2><?php _e('Test Connection', 'lcd-people'); ?></h2>
-            <form method="post" action="">
-                <?php wp_nonce_field('test_sender_connection', 'test_sender_nonce'); ?>
-                <table class="form-table">
-                    <tr>
-                        <th><label for="test_email"><?php _e('Test Email', 'lcd-people'); ?></label></th>
-                        <td>
-                            <input type="email" name="test_email" id="test_email" class="regular-text" required>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th><label for="test_firstname"><?php _e('Test First Name', 'lcd-people'); ?></label></th>
-                        <td>
-                            <input type="text" name="test_firstname" id="test_firstname" class="regular-text" required>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th><label for="test_lastname"><?php _e('Test Last Name', 'lcd-people'); ?></label></th>
-                        <td>
-                            <input type="text" name="test_lastname" id="test_lastname" class="regular-text" required>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th><label for="test_previous_status"><?php _e('Previous Status', 'lcd-people'); ?></label></th>
-                        <td>
-                            <select name="test_previous_status" id="test_previous_status">
-                                <option value=""><?php _e('Not a Member', 'lcd-people'); ?></option>
-                                <option value="active"><?php _e('Active', 'lcd-people'); ?></option>
-                                <option value="inactive"><?php _e('Inactive', 'lcd-people'); ?></option>
-                                <option value="grace"><?php _e('Grace Period', 'lcd-people'); ?></option>
-                            </select>
-                            <p class="description"><?php _e('Simulate previous membership status', 'lcd-people'); ?></p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th><label for="test_new_status"><?php _e('New Status', 'lcd-people'); ?></label></th>
-                        <td>
-                            <select name="test_new_status" id="test_new_status">
-                                <option value=""><?php _e('Not a Member', 'lcd-people'); ?></option>
-                                <option value="active"><?php _e('Active', 'lcd-people'); ?></option>
-                                <option value="inactive"><?php _e('Inactive', 'lcd-people'); ?></option>
-                                <option value="grace"><?php _e('Grace Period', 'lcd-people'); ?></option>
-                            </select>
-                            <p class="description"><?php _e('Simulate new membership status', 'lcd-people'); ?></p>
-                        </td>
-                    </tr>
-                </table>
-                <?php submit_button(__('Test Connection', 'lcd-people'), 'secondary', 'test_sender_connection'); ?>
-            </form>
+            <div style="background: #f0f0f1; padding: 15px; border-left: 4px solid #646970; margin-top: 20px;">
+                <h3><?php _e('Using the Opt-in Form', 'lcd-people'); ?></h3>
+                <p><?php _e('Once configured above, you can use the opt-in form in the following ways:', 'lcd-people'); ?></p>
+                <ul>
+                    <li><strong><?php _e('Shortcode:', 'lcd-people'); ?></strong> <code>[lcd_optin_form]</code> - <?php _e('Embed the form directly on any page or post', 'lcd-people'); ?></li>
+                    <li><strong><?php _e('Modal Trigger:', 'lcd-people'); ?></strong> <code>&lt;button data-modal="optin-form"&gt;Join Our List&lt;/button&gt;</code> - <?php _e('Open the form in a modal', 'lcd-people'); ?></li>
+                    <li><strong><?php _e('JavaScript:', 'lcd-people'); ?></strong> <code>LCDModal.open({type: 'optin-form'})</code> - <?php _e('Trigger programmatically', 'lcd-people'); ?></li>
+                </ul>
+                <p class="description"><?php _e('The form will display groups in the order configured above, with default selections pre-checked. Email and SMS auto-add groups will be automatically assigned based on user selections. All opt-ins will trigger welcome automations.', 'lcd-people'); ?></p>
+            </div>
         </div>
         <?php
     }
 
-    private function test_sender_connection($email, $firstname, $lastname, $previous_status = '', $new_status = '') {
-        $token = get_option('lcd_people_sender_token');
-        if (empty($token)) {
-            add_settings_error(
-                'lcd_people_sender_settings',
-                'sender_test_failed',
-                __('API Token is required.', 'lcd-people'),
-                'error'
-            );
-            return;
-        }
 
-        $log = array();
-        $log[] = __('Starting test connection...', 'lcd-people');
-        $log[] = sprintf(__('Looking for existing subscriber with email: %s', 'lcd-people'), $email);
-
-        // First, try to get existing subscriber
-        $existing_subscriber = null;
-        $response = wp_remote_get('https://api.sender.net/v2/subscribers/' . urlencode($email), array(
-            'headers' => array(
-                'Authorization' => 'Bearer ' . $token,
-                'Accept' => 'application/json'
-            )
-        ));
-
-        if (is_wp_error($response)) {
-            $log[] = sprintf(__('Error checking for existing subscriber: %s', 'lcd-people'), $response->get_error_message());
-            add_settings_error(
-                'lcd_people_sender_settings',
-                'sender_test_failed',
-                implode('<br>', $log),
-                'error'
-            );
-            return;
-        }
-
-        $status = wp_remote_retrieve_response_code($response);
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-
-        if ($status === 200 && isset($body['data'])) {
-            $existing_subscriber = $body['data'];
-            $log[] = __('Existing subscriber found', 'lcd-people');
-            if (!empty($existing_subscriber['subscriber_tags'])) {
-                $group_names = array_map(function($tag) {
-                    return $tag['title'];
-                }, $existing_subscriber['subscriber_tags']);
-                $log[] = sprintf(__('Current groups: %s', 'lcd-people'), implode(', ', $group_names));
-            }
-        } else {
-            $log[] = __('No existing subscriber found, will create new', 'lcd-people');
-        }
-
-        // Get groups to sync
-        $groups = array();
-        if ($existing_subscriber && isset($existing_subscriber['subscriber_tags'])) {
-            foreach ($existing_subscriber['subscriber_tags'] as $tag) {
-                $groups[] = $tag['id'];
-            }
-        }
-
-        // Check if this is a new member activation
-        $is_new_activation = ($previous_status === '' || $previous_status === false) && $new_status === 'active';
-        if ($is_new_activation) {
-            $log[] = __('Detected new member activation', 'lcd-people');
-            
-            // Add test group if configured
-            $new_member_group = get_option('lcd_people_sender_new_member_group');
-            if (!empty($new_member_group) && !in_array($new_member_group, $groups)) {
-                $groups[] = $new_member_group;
-                $log[] = sprintf(__('Adding new member group ID: %s', 'lcd-people'), $new_member_group);
-            }
-        } else {
-            $log[] = sprintf(
-                __('Status transition: %s → %s (not a new activation)', 'lcd-people'),
-                $previous_status ? $previous_status : 'none',
-                $new_status ? $new_status : 'none'
-            );
-        }
-
-        $subscriber_data = array(
-            'email' => sanitize_email($email),
-            'firstname' => sanitize_text_field($firstname),
-            'lastname' => sanitize_text_field($lastname),
-            'groups' => $groups,
-            'fields' => array(
-                '{$membership_status}' => $new_status,
-                '{$membership_end_date}' => date('Y-m-d', strtotime('+1 year')),
-                '{$sustaining_member}' => 'true'
-            )
-        );
-
-        $log[] = __('Preparing to sync test data...', 'lcd-people');
-
-        if ($existing_subscriber) {
-            $log[] = __('Updating existing subscriber...', 'lcd-people');
-            $response = wp_remote_request('https://api.sender.net/v2/subscribers/' . urlencode($email), array(
-                'method' => 'PATCH',
-                'headers' => array(
-                    'Authorization' => 'Bearer ' . $token,
-                    'Content-Type' => 'application/json',
-                    'Accept' => 'application/json'
-                ),
-                'body' => json_encode($subscriber_data)
-            ));
-        } else {
-            $log[] = __('Creating new subscriber...', 'lcd-people');
-            $response = wp_remote_post('https://api.sender.net/v2/subscribers', array(
-                'headers' => array(
-                    'Authorization' => 'Bearer ' . $token,
-                    'Content-Type' => 'application/json',
-                    'Accept' => 'application/json'
-                ),
-                'body' => json_encode($subscriber_data)
-            ));
-        }
-
-        if (is_wp_error($response)) {
-            $log[] = sprintf(__('Error syncing subscriber: %s', 'lcd-people'), $response->get_error_message());
-            add_settings_error(
-                'lcd_people_sender_settings',
-                'sender_test_failed',
-                implode('<br>', $log),
-                'error'
-            );
-            return;
-        }
-
-        $status = wp_remote_retrieve_response_code($response);
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-
-        if ($status === 200 || $status === 201) {
-            $log[] = __('Sync completed successfully!', 'lcd-people');
-            if (isset($body['data'])) {
-                $log[] = sprintf(
-                    __('Subscriber ID: %s', 'lcd-people'),
-                    $body['data']['id']
-                );
-            }
-            add_settings_error(
-                'lcd_people_sender_settings',
-                'sender_test_success',
-                implode('<br>', $log),
-                'success'
-            );
-        } else {
-            $log[] = sprintf(
-                __('Sync failed. Status: %d, Message: %s', 'lcd-people'),
-                $status,
-                isset($body['message']) ? $body['message'] : __('Unknown error', 'lcd-people')
-            );
-            add_settings_error(
-                'lcd_people_sender_settings',
-                'sender_test_failed',
-                implode('<br>', $log),
-                'error'
-            );
-        }
-    }
 
     public function render_forminator_settings_page() {
         if (!current_user_can('manage_options')) {

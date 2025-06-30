@@ -106,7 +106,8 @@ class LCD_People_Sender_Handler {
 
         // Add new member group if this is a new activation
         if ($is_new_activation) {
-            $new_member_group = get_option('lcd_people_sender_new_member_group');
+            $group_assignments = get_option('lcd_people_sender_group_assignments', array());
+            $new_member_group = $group_assignments['new_member'] ?? '';
             if (!empty($new_member_group) && !in_array($new_member_group, $groups) && $trigger_automation) {
                 $groups[] = $new_member_group;
             }
@@ -227,7 +228,8 @@ class LCD_People_Sender_Handler {
         }
 
         $token = get_option('lcd_people_sender_token');
-        $volunteer_group_id = get_option('lcd_people_sender_new_volunteer_group');
+        $group_assignments = get_option('lcd_people_sender_group_assignments', array());
+        $volunteer_group_id = $group_assignments['new_volunteer'] ?? '';
         
         if (empty($token) || empty($volunteer_group_id)) {
             $this->add_sync_record($person_id, 'Sender.net', false, 'Volunteer sync skipped: Missing API token or volunteer group ID');
@@ -321,7 +323,8 @@ class LCD_People_Sender_Handler {
      */
     public function retrigger_welcome_automation($person_id) {
         // Get the new member group ID
-        $new_member_group = get_option('lcd_people_sender_new_member_group');
+        $group_assignments = get_option('lcd_people_sender_group_assignments', array());
+        $new_member_group = $group_assignments['new_member'] ?? '';
         if (empty($new_member_group)) {
             return array(
                 'success' => false,

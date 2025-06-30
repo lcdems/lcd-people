@@ -18,6 +18,7 @@ require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-frontend.php
 require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-settings.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-actblue-handler.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-sender-handler.php';
+require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-optin-handler.php';
 require_once plugin_dir_path(__FILE__) . 'admin/class-people-email-admin.php';
 
 class LCD_People {
@@ -25,6 +26,7 @@ class LCD_People {
     private $settings;
     private $actblue_handler;
     private $sender_handler;
+    private $optin_handler;
     private $email_admin;
     const USER_META_KEY = '_lcd_person_id';
 
@@ -44,6 +46,9 @@ class LCD_People {
         
         // Initialize Sender.net handler
         $this->sender_handler = new LCD_People_Sender_Handler($this);
+        
+        // Initialize Opt-in handler
+        $this->optin_handler = new LCD_People_Optin_Handler($this);
         
         // Initialize Email Admin (only in admin)
         if (is_admin()) {
@@ -3080,6 +3085,13 @@ class LCD_People {
             $this->email_admin = LCD_People_Email_Admin::get_instance($this);
         }
         return $this->email_admin;
+    }
+    
+    /**
+     * Get opt-in handler instance
+     */
+    public function get_optin_handler() {
+        return $this->optin_handler;
     }
 
     /**
