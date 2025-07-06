@@ -91,6 +91,7 @@ class LCD_People_Optin_Handler {
                 'error' => __('An error occurred. Please try again.', 'lcd-people'),
                 'invalid_email' => __('Please enter a valid email address.', 'lcd-people'),
                 'required_fields' => __('Please fill in all required fields.', 'lcd-people'),
+                'required_consent' => __('Please accept the terms and conditions.', 'lcd-people'),
                 'success' => __('Thank you for joining our list!', 'lcd-people')
             ),
             'tracking' => array(
@@ -147,6 +148,7 @@ class LCD_People_Optin_Handler {
         $last_name = sanitize_text_field($_POST['last_name'] ?? '');
         $email = sanitize_email($_POST['email'] ?? '');
         $groups = array_map('sanitize_text_field', $_POST['groups'] ?? array());
+        $main_consent = !empty($_POST['main_consent']);
         
         // Validation
         if (empty($first_name) || empty($last_name) || empty($email)) {
@@ -164,6 +166,14 @@ class LCD_People_Optin_Handler {
         if (empty($groups)) {
             wp_send_json_error(array(
                 'message' => __('Please select at least one interest.', 'lcd-people')
+            ));
+        }
+        
+        // Validate main consent if disclaimer is configured
+        $settings = $this->get_optin_settings();
+        if (!empty($settings['main_disclaimer']) && !$main_consent) {
+            wp_send_json_error(array(
+                'message' => __('Please accept the terms and conditions.', 'lcd-people')
             ));
         }
         
@@ -204,10 +214,19 @@ class LCD_People_Optin_Handler {
         $session_key = sanitize_text_field($_POST['session_key'] ?? '');
         $phone = sanitize_text_field($_POST['phone'] ?? '');
         $sms_consent = !empty($_POST['sms_consent']);
+        $main_consent = !empty($_POST['main_consent']);
         
         if (empty($session_key)) {
             wp_send_json_error(array(
                 'message' => __('Session expired. Please start over.', 'lcd-people')
+            ));
+        }
+        
+        // Validate main consent if disclaimer is configured
+        $settings = $this->get_optin_settings();
+        if (!empty($settings['main_disclaimer']) && !$main_consent) {
+            wp_send_json_error(array(
+                'message' => __('Please accept the terms and conditions.', 'lcd-people')
             ));
         }
         

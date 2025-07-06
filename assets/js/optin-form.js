@@ -51,28 +51,46 @@
             
             // SMS consent checkbox
             $(document).on('change', '#lcd-optin-sms-consent', function() {
-                var consentGiven = $(this).is(':checked');
-                var phoneField = $('#lcd-optin-phone');
-                var submitBtn = $('#lcd-sms-optin-btn');
-                
-                if (consentGiven) {
-                    phoneField.prop('required', true);
-                    submitBtn.prop('disabled', false);
-                } else {
-                    phoneField.prop('required', false);
-                    submitBtn.prop('disabled', true);
-                }
-            });
+                this.updateSMSButtonState();
+            }.bind(this));
+            
+            // Main consent checkbox on SMS step
+            $(document).on('change', '#lcd-optin-main-consent-sms', function() {
+                this.updateSMSButtonState();
+            }.bind(this));
+        },
+        
+        updateSMSButtonState: function() {
+            var smsConsentGiven = $('#lcd-optin-sms-consent').is(':checked');
+            var mainConsentGiven = $('#lcd-optin-main-consent-sms').is(':checked');
+            var phoneField = $('#lcd-optin-phone');
+            var submitBtn = $('#lcd-sms-optin-btn');
+            
+            if (smsConsentGiven && mainConsentGiven) {
+                phoneField.prop('required', true);
+                submitBtn.prop('disabled', false);
+            } else {
+                phoneField.prop('required', false);
+                submitBtn.prop('disabled', true);
+            }
         },
         
         submitEmailStep: function() {
+            // Validate main consent checkbox if present
+            var mainConsentCheckbox = $('#lcd-optin-main-consent');
+            if (mainConsentCheckbox.length && !mainConsentCheckbox.is(':checked')) {
+                this.showError(lcdOptinVars.strings.required_consent || 'Please accept the terms and conditions.');
+                return;
+            }
+            
             var formData = {
                 action: 'lcd_optin_submit_email',
                 nonce: lcdOptinVars.nonce,
                 first_name: $('#lcd-optin-first-name').val(),
                 last_name: $('#lcd-optin-last-name').val(),
                 email: $('#lcd-optin-email').val(),
-                groups: []
+                groups: [],
+                main_consent: mainConsentCheckbox.is(':checked') ? 1 : 0
             };
             
             // Get selected groups
@@ -110,10 +128,18 @@
         },
         
         submitFinalStep: function(includeSMS) {
+            // Validate main consent checkbox on SMS step
+            var mainConsentCheckbox = $('#lcd-optin-main-consent-sms');
+            if (mainConsentCheckbox.length && !mainConsentCheckbox.is(':checked')) {
+                this.showError(lcdOptinVars.strings.required_consent || 'Please accept the terms and conditions.');
+                return;
+            }
+            
             var formData = {
                 action: 'lcd_optin_submit_final',
                 nonce: lcdOptinVars.nonce,
-                session_key: this.sessionKey
+                session_key: this.sessionKey,
+                main_consent: mainConsentCheckbox.is(':checked') ? 1 : 0
             };
             
             if (includeSMS) {

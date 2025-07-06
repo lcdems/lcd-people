@@ -44,8 +44,14 @@
             <?php endif; ?>
             
             <?php if (!empty($settings['main_disclaimer'])): ?>
-                <div class="lcd-form-disclaimer">
-                    <p><?php echo wp_kses_post($settings['main_disclaimer']); ?></p>
+                <div class="lcd-form-group">
+                    <label class="lcd-checkbox-label lcd-main-disclaimer">
+                        <input type="checkbox" id="lcd-optin-main-consent" name="main_consent" value="1" required>
+                        <span class="checkmark"></span>
+                        <span class="consent-text">
+                            <?php echo wp_kses_post($settings['main_disclaimer']); ?>
+                        </span>
+                    </label>
                 </div>
             <?php endif; ?>
             
@@ -79,6 +85,18 @@
                     </span>
                 </label>
             </div>
+            
+            <?php if (!empty($settings['main_disclaimer'])): ?>
+                <div class="lcd-form-group">
+                    <label class="lcd-checkbox-label lcd-main-disclaimer">
+                        <input type="checkbox" id="lcd-optin-main-consent-sms" name="main_consent_sms" value="1" required>
+                        <span class="checkmark"></span>
+                        <span class="consent-text">
+                            <?php echo wp_kses_post($settings['main_disclaimer']); ?>
+                        </span>
+                    </label>
+                </div>
+            <?php endif; ?>
             
             <div class="lcd-form-actions">
                 <button type="submit" class="lcd-btn lcd-btn-primary" id="lcd-sms-optin-btn" disabled>
