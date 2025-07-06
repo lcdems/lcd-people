@@ -61,7 +61,7 @@
     <div class="lcd-optin-step lcd-optin-step-sms" id="lcd-optin-step-sms" style="display: none;">
         <div class="lcd-optin-header">
             <h3><?php echo esc_html($settings['sms_title']); ?></h3>
-            <p><?php _e('You\'re almost done! Would you like to receive text messages too?', 'lcd-people'); ?></p>
+            <p><?php _e('You\'re signed up for email updates! Would you like to receive text messages too?', 'lcd-people'); ?></p>
         </div>
         
         <form id="lcd-optin-sms-form" class="lcd-optin-form">

@@ -167,7 +167,16 @@ class LCD_People_Optin_Handler {
             ));
         }
         
-        // Store in session for next step
+        // Immediately sync to Sender.net for email signup (without SMS)
+        $sync_result = $this->sync_to_sender($email, $first_name, $last_name, $groups, null);
+        
+        if (!$sync_result['success']) {
+            wp_send_json_error(array(
+                'message' => $sync_result['message'] ?? __('An error occurred. Please try again.', 'lcd-people')
+            ));
+        }
+        
+        // Store in session for SMS step
         $session_data = array(
             'first_name' => $first_name,
             'last_name' => $last_name,
@@ -181,13 +190,13 @@ class LCD_People_Optin_Handler {
         set_transient($session_key, $session_data, 30 * MINUTE_IN_SECONDS); // 30 minutes
         
         wp_send_json_success(array(
-            'message' => __('Information saved. Please complete the next step.', 'lcd-people'),
+            'message' => __('Thank you! You\'ve been added to our email list. Would you like to receive text messages too?', 'lcd-people'),
             'session_key' => $session_key
         ));
     }
     
     /**
-     * Handle final submission (with or without SMS)
+     * Handle final submission (SMS opt-in only)
      */
     public function ajax_submit_final() {
         check_ajax_referer('lcd_optin_nonce', 'nonce');
@@ -213,37 +222,114 @@ class LCD_People_Optin_Handler {
         // Clean up session
         delete_transient($session_key);
         
-        // Validate phone if SMS consent given
-        if ($sms_consent && empty($phone)) {
-            wp_send_json_error(array(
-                'message' => __('Phone number is required for SMS updates.', 'lcd-people')
+        // If SMS consent given, update user with SMS info
+        if ($sms_consent) {
+            // Validate phone if SMS consent given
+            if (empty($phone)) {
+                wp_send_json_error(array(
+                    'message' => __('Phone number is required for SMS updates.', 'lcd-people')
+                ));
+            }
+            
+            // Format phone number
+            $phone = $this->format_phone_number($phone);
+            
+            // Update user with SMS info (this adds SMS groups and phone number)
+            $result = $this->update_user_sms_preferences(
+                $session_data['email'],
+                $session_data['first_name'],
+                $session_data['last_name'],
+                $phone
+            );
+            
+            if ($result['success']) {
+                wp_send_json_success(array(
+                    'message' => __('Great! You\'ve been added to our SMS list too.', 'lcd-people')
+                ));
+            } else {
+                wp_send_json_error(array(
+                    'message' => $result['message'] ?? __('An error occurred adding SMS. Your email subscription is still active.', 'lcd-people')
+                ));
+            }
+        } else {
+            // User chose to skip SMS
+            wp_send_json_success(array(
+                'message' => __('Thank you! You\'re all set with email updates.', 'lcd-people')
             ));
         }
+    }
+    
+    /**
+     * Update user with SMS preferences
+     * 
+     * @param string $email
+     * @param string $first_name
+     * @param string $last_name  
+     * @param string $phone
+     * @return array Result with success status and message
+     */
+    private function update_user_sms_preferences($email, $first_name, $last_name, $phone) {
+        $token = get_option('lcd_people_sender_token');
+        
+        if (empty($token)) {
+            return array(
+                'success' => false,
+                'message' => __('Email service not configured.', 'lcd-people')
+            );
+        }
+        
+        // Get SMS-specific groups
+        $group_assignments = get_option('lcd_people_sender_group_assignments', array());
+        $sms_groups = $group_assignments['sms_optin'] ?? array();
         
         // Format phone number
-        if (!empty($phone)) {
-            $phone = $this->format_phone_number($phone);
-        }
+        $phone = $this->format_phone_number($phone);
         
-        // Sync to Sender.net
-        $result = $this->sync_to_sender(
-            $session_data['email'],
-            $session_data['first_name'],
-            $session_data['last_name'],
-            $session_data['groups'],
-            $sms_consent ? $phone : null
+        // Prepare subscriber data for SMS update
+        $subscriber_data = array(
+            'email' => $email,
+            'firstname' => $first_name,
+            'lastname' => $last_name,
+            'phone' => $phone,
+            'groups' => $sms_groups,
+            'trigger_automation' => true,
+            'trigger_groups' => true
         );
         
-        if ($result['success']) {
-            wp_send_json_success(array(
-                'message' => $sms_consent 
-                    ? __('Thank you! You\'ve been added to our email and SMS lists.', 'lcd-people')
-                    : __('Thank you! You\'ve been added to our email list.', 'lcd-people')
-            ));
+        // Update subscriber with SMS info
+        $response = wp_remote_post('https://api.sender.net/v2/subscribers', array(
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Content-Type' => 'application/json',
+                'Accept' => 'application/json'
+            ),
+            'body' => json_encode($subscriber_data),
+            'timeout' => 15
+        ));
+        
+        if (is_wp_error($response)) {
+            return array(
+                'success' => false,
+                'message' => __('Network error. Please try again.', 'lcd-people')
+            );
+        }
+        
+        $status = wp_remote_retrieve_response_code($response);
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+        
+        if ($status === 200 || $status === 201) {
+            return array(
+                'success' => true,
+                'message' => __('SMS preferences updated successfully!', 'lcd-people')
+            );
         } else {
-            wp_send_json_error(array(
-                'message' => $result['message'] ?? __('An error occurred. Please try again.', 'lcd-people')
-            ));
+            // Log the error for debugging
+            error_log('LCD People SMS Update: Sender.net API error - Status: ' . $status . ', Body: ' . wp_remote_retrieve_body($response));
+            
+            return array(
+                'success' => false,
+                'message' => isset($body['message']) ? $body['message'] : __('SMS update failed. Please try again.', 'lcd-people')
+            );
         }
     }
     

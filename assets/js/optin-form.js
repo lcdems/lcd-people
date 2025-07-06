@@ -97,7 +97,8 @@
                 .done(function(response) {
                     if (response.success) {
                         self.sessionKey = response.data.session_key;
-                        self.fireEmailOptinTracking();
+                        // Fire email conversion tracking since user is now signed up
+                        self.fireEmailConversionTracking();
                         self.showStep('sms');
                     } else {
                         self.showError(response.data.message || lcdOptinVars.strings.error);
@@ -126,7 +127,10 @@
             $.post(lcdOptinVars.ajaxurl, formData)
                 .done(function(response) {
                     if (response.success) {
-                        self.fireFinalConversionTracking(includeSMS);
+                        // Only fire SMS tracking if user opted in for SMS
+                        if (includeSMS) {
+                            self.fireSMSConversionTracking();
+                        }
                         self.showSuccess(response.data.message);
                     } else {
                         self.showError(response.data.message || lcdOptinVars.strings.error);
@@ -174,16 +178,39 @@
             this.showStep(this.currentStep);
         },
         
-        fireEmailOptinTracking: function() {
-            // Fire lead generation event (email captured)
-            this.fireGoogleEvent('generate_lead', {
+        fireEmailConversionTracking: function() {
+            var conversionValue = lcdOptinVars.tracking.conversion_value;
+            
+            // Fire Google Analytics conversion (email signup complete)
+            this.fireGoogleEvent('conversion', {
                 event_category: 'engagement',
-                event_label: 'email_optin_step'
+                event_label: 'email_signup_complete',
+                value: conversionValue
             });
             
-            this.fireFacebookEvent('Lead', {
-                content_name: 'Email Opt-in Step',
-                content_category: 'Lead Generation'
+            // Fire Google Ads conversion if configured
+            if (lcdOptinVars.tracking.google_conversion_label) {
+                this.fireGoogleAdsConversion(conversionValue);
+            }
+            
+            // Fire Facebook conversion
+            this.fireFacebookEvent('CompleteRegistration', {
+                content_name: 'Email Signup',
+                content_category: 'Newsletter Signup',
+                value: conversionValue
+            });
+        },
+        
+        fireSMSConversionTracking: function() {
+            // Fire SMS-specific tracking events
+            this.fireGoogleEvent('conversion', {
+                event_category: 'engagement',
+                event_label: 'sms_optin_added'
+            });
+            
+            this.fireFacebookEvent('Subscribe', {
+                content_name: 'SMS Opt-in',
+                content_category: 'SMS Subscription'
             });
         },
         
