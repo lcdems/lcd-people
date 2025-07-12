@@ -85,4 +85,48 @@ jQuery(document).ready(function($) {
             $spinner.removeClass('is-active');
         });
     });
+
+    // Export CSV Button Functionality
+    $('#lcd-export-csv-button').on('click', function() {
+        var $button = $(this);
+        $button.prop('disabled', true).text('Exporting...');
+
+        // Construct the data object from current filters
+        var data = {
+            action: 'lcd_export_people_csv',
+            nonce: lcdPeopleAdmin.nonce,
+            membership_status: $('select[name="membership_status"]').val(),
+            membership_type: $('select[name="membership_type"]').val(),
+            is_sustaining: $('select[name="is_sustaining"]').val(),
+            lcd_role: $('select[name="lcd_role"]').val(),
+            s: $('#post-search-input').val(),
+            orderby: $('input[name="orderby"]').val(),
+            order: $('input[name="order"]').val()
+        };
+
+        $.get(lcdPeopleAdmin.ajaxurl, data, function(response) {
+            if (response.success && response.data.csv_content) {
+                // Create downloadable CSV file
+                var blob = new Blob([response.data.csv_content], { type: 'text/csv;charset=utf-8;' });
+                var link = document.createElement('a');
+                var url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', response.data.filename);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                alert(lcdPeopleAdmin.strings.exportSuccess + ' (' + response.data.total + ' records)');
+            } else if (response.success) {
+                alert(lcdPeopleAdmin.strings.noData);
+            } else {
+                alert(lcdPeopleAdmin.strings.exportError + ' ' + (response.data && response.data.message ? response.data.message : 'Unknown error'));
+            }
+        }).fail(function() {
+            alert(lcdPeopleAdmin.strings.exportError + ' ' + lcdPeopleAdmin.strings.ajaxRequestFailed);
+        }).always(function() {
+            $button.prop('disabled', false).text('Export CSV');
+        });
+    });
 }); 

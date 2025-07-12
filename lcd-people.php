@@ -78,6 +78,9 @@ class LCD_People {
         // Add AJAX handler for copying emails
         add_action('wp_ajax_lcd_get_filtered_emails', array($this, 'ajax_get_filtered_emails'));
         
+        // Add AJAX handler for CSV export
+        add_action('wp_ajax_lcd_export_people_csv', array($this, 'ajax_export_people_csv'));
+        
         // Handle user deletion
         add_action('delete_user', array($this, 'handle_user_deletion'));
         
@@ -270,6 +273,10 @@ class LCD_People {
                     'syncAllError' => __('An error occurred during the sync process:', 'lcd-people'),
                     'syncErrors' => __('Sync Errors:', 'lcd-people'),
                     'ajaxRequestFailed' => __('AJAX request failed.', 'lcd-people'),
+                    'exportingCSV' => __('Generating CSV export...', 'lcd-people'),
+                    'exportSuccess' => __('CSV export completed successfully!', 'lcd-people'),
+                    'exportError' => __('Failed to export CSV:', 'lcd-people'),
+                    'noData' => __('No data found for the current filters.', 'lcd-people'),
                 )
             ));
         }
@@ -1827,6 +1834,235 @@ class LCD_People {
     }
 
     /**
+     * AJAX handler to export filtered people to CSV
+     */
+    public function ajax_export_people_csv() {
+        check_ajax_referer('lcd_people_admin', 'nonce');
+
+        if (!current_user_can('edit_posts')) {
+            wp_die(-1);
+        }
+
+        // Get the current admin filter arguments
+        $args = array(
+            'post_type' => 'lcd_person',
+            'posts_per_page' => -1, // Get all posts
+            'post_status' => 'publish',
+            'fields' => 'ids', // Only get post IDs for efficiency
+        );
+
+        // Add meta query if filters are set
+        $meta_query = array();
+
+        // Handle membership status filter
+        if (!empty($_GET['membership_status'])) {
+            $meta_query[] = array(
+                'key' => '_lcd_person_membership_status',
+                'value' => sanitize_text_field($_GET['membership_status']),
+                'compare' => '='
+            );
+        }
+
+        // Handle membership type filter
+        if (!empty($_GET['membership_type'])) {
+            $meta_query[] = array(
+                'key' => '_lcd_person_membership_type',
+                'value' => sanitize_text_field($_GET['membership_type']),
+                'compare' => '='
+            );
+        }
+
+        // Handle sustaining member filter
+        if (isset($_GET['is_sustaining']) && $_GET['is_sustaining'] !== '') {
+            $meta_query[] = array(
+                'key' => '_lcd_person_is_sustaining',
+                'value' => sanitize_text_field($_GET['is_sustaining']),
+                'compare' => '='
+            );
+        }
+
+        // Apply meta query if we have conditions
+        if (!empty($meta_query)) {
+            if (count($meta_query) > 1) {
+                $meta_query['relation'] = 'AND';
+            }
+            $args['meta_query'] = $meta_query;
+        }
+
+        // Handle role filter
+        if (!empty($_GET['lcd_role'])) {
+            $args['tax_query'] = array(
+                array(
+                    'taxonomy' => 'lcd_role',
+                    'field' => 'slug',
+                    'terms' => sanitize_text_field($_GET['lcd_role'])
+                )
+            );
+        }
+
+        // Handle search
+        if (!empty($_GET['s'])) {
+            $args['s'] = sanitize_text_field($_GET['s']);
+        }
+
+        // Handle sorting
+        if (!empty($_GET['orderby'])) {
+            $orderby = sanitize_text_field($_GET['orderby']);
+            $order = !empty($_GET['order']) ? sanitize_text_field($_GET['order']) : 'ASC';
+            
+            if (in_array($orderby, array('start_date', 'end_date'))) {
+                $args['meta_key'] = '_lcd_person_' . $orderby;
+                $args['orderby'] = 'meta_value';
+                $args['meta_type'] = 'DATE';
+                $args['order'] = $order;
+            } else {
+                $args['orderby'] = $orderby;
+                $args['order'] = $order;
+            }
+        }
+
+        // Run the query
+        $query = new WP_Query($args);
+        
+        if (empty($query->posts)) {
+            wp_send_json_success(array(
+                'csv_content' => '',
+                'filename' => '',
+                'total' => 0
+            ));
+        }
+        
+        // Generate CSV content
+        $csv_content = $this->generate_csv_content($query->posts);
+        
+        // Generate filename with current date and filters
+        $filename = 'people-export-' . date('Y-m-d');
+        if (!empty($_GET['membership_status'])) {
+            $filename .= '-' . sanitize_text_field($_GET['membership_status']);
+        }
+        if (!empty($_GET['membership_type'])) {
+            $filename .= '-' . sanitize_text_field($_GET['membership_type']);
+        }
+        $filename .= '.csv';
+
+        wp_send_json_success(array(
+            'csv_content' => $csv_content,
+            'filename' => $filename,
+            'total' => count($query->posts)
+        ));
+    }
+
+    /**
+     * Generate CSV content from people posts
+     */
+    private function generate_csv_content($posts) {
+        if (empty($posts)) {
+            return '';
+        }
+
+        // CSV headers
+        $headers = array(
+            'ID',
+            'Name',
+            'First Name',
+            'Last Name',
+            'Email',
+            'Phone',
+            'Address',
+            'Membership Status',
+            'Membership Type',
+            'Sustaining Member',
+            'Start Date',
+            'End Date',
+            'Dues Paid Via',
+            'Payment Note',
+            'WordPress User',
+            'User Email',
+            'Roles',
+            'Precinct',
+            'Is Primary',
+            'Registration Date'
+        );
+
+        // Start CSV content
+        $csv_content = '"' . implode('","', $headers) . '"' . "\n";
+
+        foreach ($posts as $post_id) {
+            $post = get_post($post_id);
+            
+            // Get all meta data
+            $first_name = get_post_meta($post_id, '_lcd_person_first_name', true);
+            $last_name = get_post_meta($post_id, '_lcd_person_last_name', true);
+            $email = get_post_meta($post_id, '_lcd_person_email', true);
+            $phone = get_post_meta($post_id, '_lcd_person_phone', true);
+            $address = get_post_meta($post_id, '_lcd_person_address', true);
+            $membership_status = get_post_meta($post_id, '_lcd_person_membership_status', true);
+            $membership_type = get_post_meta($post_id, '_lcd_person_membership_type', true);
+            $is_sustaining = get_post_meta($post_id, '_lcd_person_is_sustaining', true);
+            $start_date = get_post_meta($post_id, '_lcd_person_start_date', true);
+            $end_date = get_post_meta($post_id, '_lcd_person_end_date', true);
+            $dues_paid_via = get_post_meta($post_id, '_lcd_person_dues_paid_via', true);
+            $payment_note = get_post_meta($post_id, '_lcd_person_payment_note', true);
+            $user_id = get_post_meta($post_id, '_lcd_person_user_id', true);
+            $is_primary = get_post_meta($post_id, '_lcd_person_is_primary', true);
+            $registration_date = get_post_meta($post_id, '_lcd_person_registration_date', true);
+
+            // Get connected user info
+            $user_name = '';
+            $user_email = '';
+            if ($user_id) {
+                $user = get_user_by('ID', $user_id);
+                if ($user) {
+                    $user_name = $user->display_name;
+                    $user_email = $user->user_email;
+                }
+            }
+
+            // Get roles
+            $roles = wp_get_post_terms($post_id, 'lcd_role', array('fields' => 'names'));
+            $roles_string = is_array($roles) ? implode('; ', $roles) : '';
+
+            // Get precinct
+            $precincts = wp_get_post_terms($post_id, 'lcd_precinct', array('fields' => 'names'));
+            $precincts_string = is_array($precincts) ? implode('; ', $precincts) : '';
+
+            // Prepare row data
+            $row = array(
+                $post_id,
+                $post->post_title,
+                $first_name,
+                $last_name,
+                $email,
+                $phone,
+                $address,
+                $membership_status,
+                $membership_type,
+                $is_sustaining === '1' ? 'Yes' : 'No',
+                $start_date,
+                $end_date,
+                $dues_paid_via,
+                $payment_note,
+                $user_name,
+                $user_email,
+                $roles_string,
+                $precincts_string,
+                $is_primary === '1' ? 'Yes' : 'No',
+                $registration_date
+            );
+
+            // Escape CSV values
+            $escaped_row = array();
+            foreach ($row as $value) {
+                $escaped_row[] = '"' . str_replace('"', '""', $value) . '"';
+            }
+
+            $csv_content .= implode(',', $escaped_row) . "\n";
+        }
+
+        return $csv_content;
+    }
+
+    /**
      * Add custom buttons to the admin list table navigation area.
      */
     public function add_copy_emails_button($which) {
@@ -1841,6 +2077,12 @@ class LCD_People {
         
         // Copy Emails Button
         echo '<button type="button" id="lcd-copy-emails-button" class="button">' . esc_html__('Copy Emails', 'lcd-people') . '</button>';
+        
+        // Export CSV Button
+        echo '<button type="button" id="lcd-export-csv-button" class="button">' 
+             . '<span class="dashicons dashicons-download" style="margin-top: 4px;"></span> '
+             . esc_html__('Export CSV', 'lcd-people') 
+             . '</button>';
         
         // Sync All to Sender Button
         if (current_user_can('manage_options')) { // Only show sync button to admins

@@ -1,0 +1,46 @@
+/* LCD People Admin List Styles */
+
+/* Highlight rows for duplicate primary members */
+.lcd-duplicate-primary {
+    background-color: #fef7e8 !important;
+    border-left: 4px solid #f56e28 !important;
+}
+
+.lcd-duplicate-primary td {
+    background-color: #fef7e8 !important;
+}
+
+/* Button spacing for admin actions */
+.lcd-people-actions {
+    margin-right: 10px;
+}
+
+.lcd-people-actions .button {
+    margin-right: 5px;
+}
+
+/* Spinner styling */
+.lcd-people-actions .spinner {
+    visibility: visible;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.lcd-people-actions .spinner.is-active {
+    opacity: 1;
+}
+
+/* Results container */
+#lcd-sync-results {
+    max-width: 100%;
+    word-wrap: break-word;
+}
+
+#lcd-sync-results ul {
+    margin: 10px 0;
+    padding-left: 20px;
+}
+
+#lcd-sync-results li {
+    margin: 5px 0;
+} 
