@@ -11,13 +11,11 @@
     window.lcdOptinForm = {
         currentStep: 'email',
         sessionKey: null,
-        isDirectSMSView: false,
         
         init: function() {
-            // Check if we're in direct SMS view mode
+            // Check if we're showing SMS step directly (for compliance review)
             var container = $('#lcd-optin-form');
             if (container.data('force-step') === 'sms') {
-                this.isDirectSMSView = true;
                 this.currentStep = 'sms';
             }
             
@@ -74,19 +72,12 @@
             var phoneField = $('#lcd-optin-phone');
             var submitBtn = $('#lcd-sms-optin-btn');
             
-            // In direct SMS view mode, fields are already required, so just enable button
-            if (this.isDirectSMSView) {
-                // Button is enabled by default in direct SMS view
+            if (smsConsentGiven && mainConsentGiven) {
+                phoneField.prop('required', true);
                 submitBtn.prop('disabled', false);
             } else {
-                // Standard 2-step flow logic
-                if (smsConsentGiven && mainConsentGiven) {
-                    phoneField.prop('required', true);
-                    submitBtn.prop('disabled', false);
-                } else {
-                    phoneField.prop('required', false);
-                    submitBtn.prop('disabled', true);
-                }
+                phoneField.prop('required', false);
+                submitBtn.prop('disabled', true);
             }
         },
         
@@ -157,19 +148,6 @@
                 main_consent: mainConsentCheckbox.is(':checked') ? 1 : 0
             };
             
-            // If direct SMS view, include name and email fields
-            if (this.isDirectSMSView) {
-                formData.first_name = $('#lcd-optin-first-name-sms').val();
-                formData.last_name = $('#lcd-optin-last-name-sms').val();
-                formData.email = $('#lcd-optin-email-sms').val();
-                
-                // Validate required fields
-                if (!formData.first_name || !formData.last_name || !formData.email) {
-                    this.showError(lcdOptinVars.strings.required_fields || 'Please fill in all required fields.');
-                    return;
-                }
-            }
-            
             if (includeSMS) {
                 formData.phone = $('#lcd-optin-phone').val();
                 formData.sms_consent = $('#lcd-optin-sms-consent').is(':checked') ? 1 : 0;
@@ -193,9 +171,9 @@
                         }
                         self.showSuccess(response.data.message);
                     } else {
-                        // Check if this is a preview mode error
-                        if (response.data && response.data.is_preview) {
-                            self.showPreviewError(response.data.message);
+                        // Check if this needs redirect to main form
+                        if (response.data && response.data.needs_redirect) {
+                            self.showRedirectError(response.data.message);
                         } else {
                             self.showError(response.data.message || lcdOptinVars.strings.error);
                         }
@@ -238,30 +216,23 @@
             $('#lcd-optin-error').show();
         },
         
-        showPreviewError: function(message) {
-            // Show a special styled error for preview mode
+        showRedirectError: function(message) {
+            // Show error with link back to main form
             $('.lcd-optin-step').hide();
             $('#lcd-optin-loading').hide();
+            
+            // Get current URL without query params
+            var baseUrl = window.location.href.split('?')[0];
+            
             var errorDiv = $('#lcd-optin-error');
             errorDiv.find('.error-message').html(
-                '<strong>Preview Mode</strong><br>' + message
+                message + '<br><br><a href="' + baseUrl + '" class="lcd-btn lcd-btn-primary">Start Sign-Up Process</a>'
             );
-            errorDiv.css({
-                'background': '#fff3cd',
-                'border': '1px solid #ffc107',
-                'color': '#856404'
-            });
             errorDiv.show();
         },
         
         hideError: function() {
             $('#lcd-optin-error').hide();
-            // Reset error styling
-            $('#lcd-optin-error').css({
-                'background': '',
-                'border': '',
-                'color': ''
-            });
             this.showStep(this.currentStep);
         },
         

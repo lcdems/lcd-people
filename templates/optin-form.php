@@ -68,39 +68,10 @@
     <div class="lcd-optin-step lcd-optin-step-sms <?php echo ($force_step === 'sms') ? 'active' : ''; ?>" id="lcd-optin-step-sms" style="<?php echo ($force_step === 'sms') ? 'display: block;' : 'display: none;'; ?>">
         <div class="lcd-optin-header">
             <h3><?php echo esc_html($settings['sms_title']); ?></h3>
-            <?php if ($force_step === 'sms'): ?>
-                <div class="lcd-sms-direct-notice" style="margin-bottom: 15px; padding: 12px; background: #f0f8ff; border-left: 4px solid #0073aa; border-radius: 4px;">
-                    <p style="margin: 0; font-size: 14px; line-height: 1.6;">
-                        <strong><?php _e('SMS Updates', 'lcd-people'); ?></strong><br>
-                        <?php _e('Stay connected with text message updates.', 'lcd-people'); ?>
-                        <a href="?" style="text-decoration: underline;"><?php _e('Start here', 'lcd-people'); ?></a> <?php _e('if you\'re new and want to sign up for email updates first.', 'lcd-people'); ?>
-                    </p>
-                </div>
-            <?php else: ?>
-                <p><?php _e('You\'re signed up for email updates! Would you like to receive text messages too?', 'lcd-people'); ?></p>
-            <?php endif; ?>
+            <p><?php _e('Stay connected with text message updates!', 'lcd-people'); ?></p>
         </div>
         
         <form id="lcd-optin-sms-form" class="lcd-optin-form">
-            <!-- Show name and email fields when accessed directly -->
-            <?php if ($force_step === 'sms'): ?>
-                <div class="lcd-form-group">
-                    <label for="lcd-optin-first-name-sms"><?php _e('First Name', 'lcd-people'); ?> <span class="required">*</span></label>
-                    <input type="text" id="lcd-optin-first-name-sms" name="first_name" required>
-                </div>
-                
-                <div class="lcd-form-group">
-                    <label for="lcd-optin-last-name-sms"><?php _e('Last Name', 'lcd-people'); ?> <span class="required">*</span></label>
-                    <input type="text" id="lcd-optin-last-name-sms" name="last_name" required>
-                </div>
-                
-                <div class="lcd-form-group">
-                    <label for="lcd-optin-email-sms"><?php _e('Email Address', 'lcd-people'); ?> <span class="required">*</span></label>
-                    <input type="email" id="lcd-optin-email-sms" name="email" required>
-                    <p class="description" style="font-size: 12px; margin-top: 5px; color: #666;"><?php _e('Required for account verification and service communication.', 'lcd-people'); ?></p>
-                </div>
-            <?php endif; ?>
-            
             <div class="lcd-form-group">
                 <label for="lcd-optin-phone"><?php _e('Phone Number', 'lcd-people'); ?> <span class="required">*</span></label>
                 <input type="tel" id="lcd-optin-phone" name="phone" placeholder="(555) 123-4567" required>
@@ -147,7 +118,7 @@
             </div>
             
             <div class="lcd-form-actions">
-                <button type="submit" class="lcd-btn lcd-btn-primary" id="lcd-sms-optin-btn" <?php echo ($force_step !== 'sms') ? 'disabled' : ''; ?>>
+                <button type="submit" class="lcd-btn lcd-btn-primary" id="lcd-sms-optin-btn" disabled>
                     <?php echo esc_html($settings['sms_cta']); ?>
                 </button>
                 <?php if ($force_step !== 'sms'): ?>
