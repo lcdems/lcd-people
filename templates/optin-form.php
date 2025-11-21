@@ -16,8 +16,8 @@
             </div>
             
             <div class="lcd-form-group">
-                <label for="lcd-optin-last-name-combined"><?php _e('Last Name', 'lcd-people'); ?> <span class="required">*</span></label>
-                <input type="text" id="lcd-optin-last-name-combined" name="last_name" required>
+                <label for="lcd-optin-last-name-combined"><?php _e('Last Name', 'lcd-people'); ?></label>
+                <input type="text" id="lcd-optin-last-name-combined" name="last_name">
             </div>
             
             <div class="lcd-form-group">
@@ -26,8 +26,8 @@
             </div>
             
             <div class="lcd-form-group">
-                <label for="lcd-optin-phone-combined"><?php _e('Phone Number', 'lcd-people'); ?></label>
-                <input type="tel" id="lcd-optin-phone-combined" name="phone" placeholder="(555) 123-4567">
+                <label for="lcd-optin-phone-combined"><?php _e('Phone Number', 'lcd-people'); ?> <span class="required">*</span></label>
+                <input type="tel" id="lcd-optin-phone-combined" name="phone" placeholder="(555) 123-4567" required>
             </div>
             
             <?php if (count($available_groups) > 1): ?>
@@ -53,7 +53,7 @@
             
             <div class="lcd-form-group">
                 <label class="lcd-checkbox-label lcd-sms-consent">
-                    <input type="checkbox" id="lcd-optin-sms-consent-combined" name="sms_consent" value="1">
+                    <input type="checkbox" id="lcd-optin-sms-consent-combined" name="sms_consent" value="1" required>
                     <span class="checkmark"></span>
                     <span class="consent-text">
                         <?php echo wp_kses_post($settings['sms_disclaimer']); ?>
@@ -74,7 +74,7 @@
             <?php endif; ?>
             
             <div class="lcd-form-actions">
-                <button type="submit" class="lcd-btn lcd-btn-primary">
+                <button type="submit" class="lcd-btn lcd-btn-primary" id="lcd-combined-submit-btn" disabled>
                     <?php echo esc_html($settings['email_cta']); ?>
                 </button>
             </div>

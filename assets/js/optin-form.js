@@ -71,15 +71,10 @@
                 this.updateSMSButtonState();
             }.bind(this));
             
-            // Combined form SMS consent (optional phone requirement)
-            $(document).on('change', '#lcd-optin-sms-consent-combined', function() {
-                var phoneField = $('#lcd-optin-phone-combined');
-                if ($(this).is(':checked')) {
-                    phoneField.prop('required', true);
-                } else {
-                    phoneField.prop('required', false);
-                }
-            });
+            // Combined form field validation
+            $(document).on('input change', '#lcd-optin-combined-form input', function() {
+                this.updateCombinedButtonState();
+            }.bind(this));
         },
         
         updateSMSButtonState: function() {
@@ -93,6 +88,27 @@
                 submitBtn.prop('disabled', false);
             } else {
                 phoneField.prop('required', false);
+                submitBtn.prop('disabled', true);
+            }
+        },
+        
+        updateCombinedButtonState: function() {
+            var firstName = $('#lcd-optin-first-name-combined').val().trim();
+            var email = $('#lcd-optin-email-combined').val().trim();
+            var phone = $('#lcd-optin-phone-combined').val().trim();
+            var smsConsent = $('#lcd-optin-sms-consent-combined').is(':checked');
+            var mainConsent = $('#lcd-optin-main-consent-combined').is(':checked');
+            var submitBtn = $('#lcd-combined-submit-btn');
+            
+            // All fields are required except last name
+            var allFieldsFilled = firstName && email && phone && smsConsent && mainConsent;
+            
+            // Basic email validation
+            var emailValid = email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+            
+            if (allFieldsFilled && emailValid) {
+                submitBtn.prop('disabled', false);
+            } else {
                 submitBtn.prop('disabled', true);
             }
         },
@@ -160,9 +176,15 @@
             var smsConsent = $('#lcd-optin-sms-consent-combined').is(':checked');
             var phone = $('#lcd-optin-phone-combined').val();
             
-            // Validate phone if SMS consent is checked
-            if (smsConsent && !phone) {
-                this.showError('Phone number is required when opting in to SMS.');
+            // SMS consent is required
+            if (!smsConsent) {
+                this.showError('Please accept the SMS consent to continue.');
+                return;
+            }
+            
+            // Phone is required
+            if (!phone) {
+                this.showError('Phone number is required.');
                 return;
             }
             
@@ -174,7 +196,7 @@
                 email: $('#lcd-optin-email-combined').val(),
                 phone: phone,
                 groups: [],
-                sms_consent: smsConsent ? 1 : 0,
+                sms_consent: 1,
                 main_consent: mainConsentCheckbox.is(':checked') ? 1 : 0
             };
             
@@ -198,11 +220,9 @@
             $.post(lcdOptinVars.ajaxurl, formData)
                 .done(function(response) {
                     if (response.success) {
-                        // Fire conversion tracking
+                        // Fire conversion tracking for both email and SMS
                         self.fireEmailConversionTracking();
-                        if (smsConsent) {
-                            self.fireSMSConversionTracking();
-                        }
+                        self.fireSMSConversionTracking();
                         self.showSuccess(response.data.message);
                     } else {
                         self.showError(response.data.message || lcdOptinVars.strings.error);
@@ -467,6 +487,11 @@
     $(document).ready(function() {
         lcdOptinForm.init();
         initModalIntegration();
+        
+        // Initialize combined form button state if present
+        if ($('#lcd-optin-combined-form').length) {
+            lcdOptinForm.updateCombinedButtonState();
+        }
     });
 
 })(jQuery); 
