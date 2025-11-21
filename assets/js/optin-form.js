@@ -43,6 +43,12 @@
                 self.submitEmailStep();
             });
             
+            // Combined form submission
+            $(document).on('submit', '#lcd-optin-combined-form', function(e) {
+                e.preventDefault();
+                self.submitCombinedForm();
+            });
+            
             // SMS form submission
             $(document).on('submit', '#lcd-optin-sms-form', function(e) {
                 e.preventDefault();
@@ -64,6 +70,16 @@
             $(document).on('change', '#lcd-optin-main-consent-sms', function() {
                 this.updateSMSButtonState();
             }.bind(this));
+            
+            // Combined form SMS consent (optional phone requirement)
+            $(document).on('change', '#lcd-optin-sms-consent-combined', function() {
+                var phoneField = $('#lcd-optin-phone-combined');
+                if ($(this).is(':checked')) {
+                    phoneField.prop('required', true);
+                } else {
+                    phoneField.prop('required', false);
+                }
+            });
         },
         
         updateSMSButtonState: function() {
@@ -124,6 +140,70 @@
                         // Fire email conversion tracking since user is now signed up
                         self.fireEmailConversionTracking();
                         self.showStep('sms');
+                    } else {
+                        self.showError(response.data.message || lcdOptinVars.strings.error);
+                    }
+                })
+                .fail(function() {
+                    self.showError(lcdOptinVars.strings.error);
+                });
+        },
+        
+        submitCombinedForm: function() {
+            // Validate main consent checkbox if present
+            var mainConsentCheckbox = $('#lcd-optin-main-consent-combined');
+            if (mainConsentCheckbox.length && !mainConsentCheckbox.is(':checked')) {
+                this.showError(lcdOptinVars.strings.required_consent || 'Please accept the terms and conditions.');
+                return;
+            }
+            
+            var smsConsent = $('#lcd-optin-sms-consent-combined').is(':checked');
+            var phone = $('#lcd-optin-phone-combined').val();
+            
+            // Validate phone if SMS consent is checked
+            if (smsConsent && !phone) {
+                this.showError('Phone number is required when opting in to SMS.');
+                return;
+            }
+            
+            var formData = {
+                action: 'lcd_optin_submit_combined',
+                nonce: lcdOptinVars.nonce,
+                first_name: $('#lcd-optin-first-name-combined').val(),
+                last_name: $('#lcd-optin-last-name-combined').val(),
+                email: $('#lcd-optin-email-combined').val(),
+                phone: phone,
+                groups: [],
+                sms_consent: smsConsent ? 1 : 0,
+                main_consent: mainConsentCheckbox.is(':checked') ? 1 : 0
+            };
+            
+            // Get selected groups
+            $('#lcd-optin-combined-form input[name="groups[]"]:checked').each(function() {
+                formData.groups.push($(this).val());
+            });
+            
+            // Auto-select the first group if none are selected but groups are available
+            if (formData.groups.length === 0) {
+                var firstGroup = $('#lcd-optin-combined-form input[name="groups[]"]').first();
+                if (firstGroup.length) {
+                    firstGroup.prop('checked', true);
+                    formData.groups.push(firstGroup.val());
+                }
+            }
+            
+            this.showLoading();
+            
+            var self = this;
+            $.post(lcdOptinVars.ajaxurl, formData)
+                .done(function(response) {
+                    if (response.success) {
+                        // Fire conversion tracking
+                        self.fireEmailConversionTracking();
+                        if (smsConsent) {
+                            self.fireSMSConversionTracking();
+                        }
+                        self.showSuccess(response.data.message);
                     } else {
                         self.showError(response.data.message || lcdOptinVars.strings.error);
                     }

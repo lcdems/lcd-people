@@ -48,6 +48,9 @@ class LCD_People_Optin_Handler {
         add_action('wp_ajax_lcd_optin_submit_final', array($this, 'ajax_submit_final'));
         add_action('wp_ajax_nopriv_lcd_optin_submit_final', array($this, 'ajax_submit_final'));
         
+        add_action('wp_ajax_lcd_optin_submit_combined', array($this, 'ajax_submit_combined'));
+        add_action('wp_ajax_nopriv_lcd_optin_submit_combined', array($this, 'ajax_submit_combined'));
+        
         // Enqueue scripts
         add_action('wp_enqueue_scripts', array($this, 'enqueue_scripts'));
         
@@ -111,19 +114,21 @@ class LCD_People_Optin_Handler {
      */
     public function render_optin_form_shortcode($atts = array()) {
         $atts = shortcode_atts(array(
-            'modal' => 'false'
+            'modal' => 'false',
+            'type' => 'two-step' // 'two-step' (default) or 'combined' (all fields in one form)
         ), $atts);
         
-        return $this->render_optin_form($atts['modal'] === 'true');
+        return $this->render_optin_form($atts['modal'] === 'true', $atts['type']);
     }
     
     /**
      * Render the opt-in form HTML
      * 
      * @param bool $is_modal Whether this is for modal display
+     * @param string $form_type Type of form ('two-step' or 'combined')
      * @return string Form HTML
      */
-    public function render_optin_form($is_modal = false) {
+    public function render_optin_form($is_modal = false, $form_type = 'two-step') {
         $settings = $this->get_optin_settings();
         $available_groups = $this->get_available_groups();
         
@@ -284,6 +289,73 @@ class LCD_People_Optin_Handler {
                 'message' => __('Thank you! You\'re all set with email updates.', 'lcd-people')
             ));
         }
+    }
+    
+    /**
+     * Handle combined form submission (all fields at once)
+     */
+    public function ajax_submit_combined() {
+        check_ajax_referer('lcd_optin_nonce', 'nonce');
+        
+        $first_name = sanitize_text_field($_POST['first_name'] ?? '');
+        $last_name = sanitize_text_field($_POST['last_name'] ?? '');
+        $email = sanitize_email($_POST['email'] ?? '');
+        $phone = sanitize_text_field($_POST['phone'] ?? '');
+        $groups = array_map('sanitize_text_field', $_POST['groups'] ?? array());
+        $sms_consent = !empty($_POST['sms_consent']);
+        $main_consent = !empty($_POST['main_consent']);
+        
+        // Validation
+        if (empty($first_name) || empty($last_name) || empty($email)) {
+            wp_send_json_error(array(
+                'message' => __('Please fill in all required fields.', 'lcd-people')
+            ));
+        }
+        
+        if (!is_email($email)) {
+            wp_send_json_error(array(
+                'message' => __('Please enter a valid email address.', 'lcd-people')
+            ));
+        }
+        
+        // Validate main consent if disclaimer is configured
+        $settings = $this->get_optin_settings();
+        if (!empty($settings['main_disclaimer']) && !$main_consent) {
+            wp_send_json_error(array(
+                'message' => __('Please accept the terms and conditions.', 'lcd-people')
+            ));
+        }
+        
+        // If SMS consent given, validate phone
+        if ($sms_consent && empty($phone)) {
+            wp_send_json_error(array(
+                'message' => __('Phone number is required when opting in to SMS.', 'lcd-people')
+            ));
+        }
+        
+        // Format phone number if provided
+        $formatted_phone = null;
+        if ($sms_consent && !empty($phone)) {
+            $formatted_phone = $this->format_phone_number($phone);
+        }
+        
+        // Sync to Sender.net with both email and SMS if applicable
+        $sync_result = $this->sync_to_sender($email, $first_name, $last_name, $groups, $formatted_phone);
+        
+        if (!$sync_result['success']) {
+            wp_send_json_error(array(
+                'message' => $sync_result['message'] ?? __('An error occurred. Please try again.', 'lcd-people')
+            ));
+        }
+        
+        // Success message based on what they signed up for
+        $message = $formatted_phone 
+            ? __('Thank you! You\'ve been added to our email and SMS lists.', 'lcd-people')
+            : __('Thank you! You\'ve been added to our email list.', 'lcd-people');
+        
+        wp_send_json_success(array(
+            'message' => $message
+        ));
     }
     
     /**
