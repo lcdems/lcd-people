@@ -130,6 +130,12 @@ class LCD_People_Optin_Handler {
         // Note: Empty available_groups is OK - form can work with just auto-add groups
         // from email_optin/sms_optin settings
         
+        // Check if we should show SMS step directly (for 10 DLC review)
+        $force_step = null;
+        if (isset($_GET['view']) && $_GET['view'] === 'sms') {
+            $force_step = 'sms';
+        }
+        
         $container_class = $is_modal ? 'lcd-optin-modal' : 'lcd-optin-embedded';
         
         ob_start();
@@ -212,9 +218,16 @@ class LCD_People_Optin_Handler {
         $sms_consent = !empty($_POST['sms_consent']);
         $main_consent = !empty($_POST['main_consent']);
         
-        if (empty($session_key)) {
+        // Check if this is a direct SMS submission (with email provided)
+        $direct_email = sanitize_email($_POST['email'] ?? '');
+        $direct_first_name = sanitize_text_field($_POST['first_name'] ?? '');
+        $direct_last_name = sanitize_text_field($_POST['last_name'] ?? '');
+        $is_direct_submission = !empty($direct_email);
+        
+        if (!$is_direct_submission && empty($session_key)) {
             wp_send_json_error(array(
-                'message' => __('Session expired. Please start over.', 'lcd-people')
+                'message' => __('This is a preview of our SMS consent form for compliance review. To actually sign up, please start from the beginning of our sign-up process.', 'lcd-people'),
+                'is_preview' => true
             ));
         }
         
@@ -226,16 +239,41 @@ class LCD_People_Optin_Handler {
             ));
         }
         
-        // Retrieve session data
-        $session_data = get_transient($session_key);
-        if (!$session_data) {
-            wp_send_json_error(array(
-                'message' => __('Session expired. Please start over.', 'lcd-people')
-            ));
+        // Get user data from either session or direct submission
+        if ($is_direct_submission) {
+            // Direct submission with email
+            $email = $direct_email;
+            $first_name = $direct_first_name;
+            $last_name = $direct_last_name;
+            
+            // Validate required fields
+            if (empty($first_name) || empty($last_name) || empty($email)) {
+                wp_send_json_error(array(
+                    'message' => __('Please fill in all required fields.', 'lcd-people')
+                ));
+            }
+            
+            if (!is_email($email)) {
+                wp_send_json_error(array(
+                    'message' => __('Please enter a valid email address.', 'lcd-people')
+                ));
+            }
+        } else {
+            // Retrieve session data
+            $session_data = get_transient($session_key);
+            if (!$session_data) {
+                wp_send_json_error(array(
+                    'message' => __('Session expired. Please start over.', 'lcd-people')
+                ));
+            }
+            
+            $email = $session_data['email'];
+            $first_name = $session_data['first_name'];
+            $last_name = $session_data['last_name'];
+            
+            // Clean up session
+            delete_transient($session_key);
         }
-        
-        // Clean up session
-        delete_transient($session_key);
         
         // If SMS consent given, update user with SMS info
         if ($sms_consent) {
@@ -251,19 +289,19 @@ class LCD_People_Optin_Handler {
             
             // Update user with SMS info (this adds SMS groups and phone number)
             $result = $this->update_user_sms_preferences(
-                $session_data['email'],
-                $session_data['first_name'],
-                $session_data['last_name'],
+                $email,
+                $first_name,
+                $last_name,
                 $phone
             );
             
             if ($result['success']) {
                 wp_send_json_success(array(
-                    'message' => __('Great! You\'ve been added to our SMS list too.', 'lcd-people')
+                    'message' => __('Great! You\'ve been added to our SMS list.', 'lcd-people')
                 ));
             } else {
                 wp_send_json_error(array(
-                    'message' => $result['message'] ?? __('An error occurred adding SMS. Your email subscription is still active.', 'lcd-people')
+                    'message' => $result['message'] ?? __('An error occurred adding SMS. Please try again.', 'lcd-people')
                 ));
             }
         } else {
