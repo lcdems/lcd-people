@@ -98,13 +98,7 @@
                     </label>
                 </div>
             <?php endif; ?>
-            
-            <!-- Privacy disclosure (10 DLC requirement) -->
-            <div class="lcd-form-group">
-                <p class="lcd-privacy-notice" style="font-size: 13px; color: #666; padding: 10px; background: #f9f9f9; border-radius: 4px; margin: 10px 0;">
-                    <strong><?php _e('Privacy:', 'lcd-people'); ?></strong> <?php _e('Your phone information will not be shared or sold to third parties.', 'lcd-people'); ?>
-                </p>
-            </div>
+
             
             <div class="lcd-form-actions">
                 <button type="submit" class="lcd-btn lcd-btn-primary" id="lcd-sms-optin-btn" disabled>
