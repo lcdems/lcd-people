@@ -98,15 +98,15 @@
                 formData.groups.push($(this).val());
             });
             
-            // Ensure at least one group is selected
+            // Auto-select the first group if none are selected but groups are available
             if (formData.groups.length === 0) {
-                // Auto-select the first group if none are selected
                 var firstGroup = $('input[name="groups[]"]').first();
                 if (firstGroup.length) {
                     firstGroup.prop('checked', true);
                     formData.groups.push(firstGroup.val());
                 }
             }
+            // Note: Empty groups array is OK - form will use auto-add groups from settings
             
             this.showLoading();
             

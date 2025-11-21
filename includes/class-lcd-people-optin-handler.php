@@ -127,9 +127,8 @@ class LCD_People_Optin_Handler {
         $settings = $this->get_optin_settings();
         $available_groups = $this->get_available_groups();
         
-        if (empty($available_groups)) {
-            return '<div class="lcd-optin-not-configured"><p>' . __('Opt-in form is not properly configured. Please configure groups in the Sender.net settings.', 'lcd-people') . '</p></div>';
-        }
+        // Note: Empty available_groups is OK - form can work with just auto-add groups
+        // from email_optin/sms_optin settings
         
         $container_class = $is_modal ? 'lcd-optin-modal' : 'lcd-optin-embedded';
         
@@ -163,11 +162,8 @@ class LCD_People_Optin_Handler {
             ));
         }
         
-        if (empty($groups)) {
-            wp_send_json_error(array(
-                'message' => __('Please select at least one interest.', 'lcd-people')
-            ));
-        }
+        // Note: Empty $groups is OK - form can work with just auto-add groups
+        // from email_optin/sms_optin settings
         
         // Validate main consent if disclaimer is configured
         $settings = $this->get_optin_settings();

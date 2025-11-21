@@ -37,11 +37,12 @@
                         <?php endforeach; ?>
                     </div>
                 </div>
-            <?php else: ?>
+            <?php elseif (count($available_groups) === 1): ?>
                 <!-- Single group - auto-select it -->
                 <?php $group_id = array_key_first($available_groups); ?>
                 <input type="hidden" name="groups[]" value="<?php echo esc_attr($group_id); ?>">
             <?php endif; ?>
+            <?php // Note: If no available_groups, form will use auto-add groups from settings ?>
             
             <?php if (!empty($settings['main_disclaimer'])): ?>
                 <div class="lcd-form-group">
