@@ -106,17 +106,6 @@
                 </p>
             </div>
             
-            <!-- Legal links (10 DLC requirement) -->
-            <div class="lcd-form-group lcd-legal-links" style="font-size: 13px; text-align: center; margin-top: 15px;">
-                <p style="margin: 0;">
-                    <a href="<?php echo esc_url(get_privacy_policy_url() ?: home_url('/privacy-policy')); ?>" target="_blank"><?php _e('Privacy Policy', 'lcd-people'); ?></a>
-                    <?php if (get_permalink(get_page_by_path('terms'))): ?>
-                        | <a href="<?php echo esc_url(get_permalink(get_page_by_path('terms'))); ?>" target="_blank"><?php _e('Terms & Conditions', 'lcd-people'); ?></a>
-                    <?php endif; ?>
-                    | <a href="<?php echo esc_url(home_url('/')); ?>"><?php _e('← Back to Home', 'lcd-people'); ?></a>
-                </p>
-            </div>
-            
             <div class="lcd-form-actions">
                 <button type="submit" class="lcd-btn lcd-btn-primary" id="lcd-sms-optin-btn" disabled>
                     <?php echo esc_html($settings['sms_cta']); ?>
