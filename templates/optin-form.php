@@ -93,13 +93,13 @@
         
         <form id="lcd-optin-email-form" class="lcd-optin-form">
             <div class="lcd-form-group">
-                <label for="lcd-optin-first-name"><?php _e('First Name', 'lcd-people'); ?> <span class="required">*</span></label>
-                <input type="text" id="lcd-optin-first-name" name="first_name" required>
+                <label for="lcd-optin-first-name"><?php _e('First Name', 'lcd-people'); ?></label>
+                <input type="text" id="lcd-optin-first-name" name="first_name">
             </div>
             
             <div class="lcd-form-group">
-                <label for="lcd-optin-last-name"><?php _e('Last Name', 'lcd-people'); ?> <span class="required">*</span></label>
-                <input type="text" id="lcd-optin-last-name" name="last_name" required>
+                <label for="lcd-optin-last-name"><?php _e('Last Name', 'lcd-people'); ?></label>
+                <input type="text" id="lcd-optin-last-name" name="last_name">
             </div>
             
             <div class="lcd-form-group">
@@ -157,8 +157,8 @@
         
         <form id="lcd-optin-sms-form" class="lcd-optin-form">
             <div class="lcd-form-group">
-                <label for="lcd-optin-phone"><?php _e('Phone Number', 'lcd-people'); ?> <span class="required">*</span></label>
-                <input type="tel" id="lcd-optin-phone" name="phone" placeholder="(555) 123-4567" required>
+                <label for="lcd-optin-phone"><?php _e('Phone Number', 'lcd-people'); ?></label>
+                <input type="tel" id="lcd-optin-phone" name="phone" placeholder="(555) 123-4567">
             </div>
             
             <div class="lcd-form-group">
