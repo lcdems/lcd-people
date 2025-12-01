@@ -11,8 +11,8 @@
         
         <form id="lcd-optin-combined-form" class="lcd-optin-form">
             <div class="lcd-form-group">
-                <label for="lcd-optin-first-name-combined"><?php _e('First Name', 'lcd-people'); ?> <span class="required">*</span></label>
-                <input type="text" id="lcd-optin-first-name-combined" name="first_name" required>
+                <label for="lcd-optin-first-name-combined"><?php _e('First Name', 'lcd-people'); ?></label>
+                <input type="text" id="lcd-optin-first-name-combined" name="first_name">
             </div>
             
             <div class="lcd-form-group">
@@ -26,8 +26,8 @@
             </div>
             
             <div class="lcd-form-group">
-                <label for="lcd-optin-phone-combined"><?php _e('Phone Number', 'lcd-people'); ?> <span class="required">*</span></label>
-                <input type="tel" id="lcd-optin-phone-combined" name="phone" placeholder="(555) 123-4567" required>
+                <label for="lcd-optin-phone-combined"><?php _e('Phone Number', 'lcd-people'); ?></label>
+                <input type="tel" id="lcd-optin-phone-combined" name="phone" placeholder="(555) 123-4567">
             </div>
             
             <?php if (count($available_groups) > 1): ?>
@@ -51,9 +51,10 @@
             <?php endif; ?>
             <?php // Note: If no available_groups, form will use auto-add groups from settings ?>
             
-            <div class="lcd-form-group">
+            <!-- SMS consent - only visible when phone number is entered -->
+            <div class="lcd-form-group lcd-sms-consent-wrapper" id="lcd-sms-consent-wrapper-combined" style="display: none;">
                 <label class="lcd-checkbox-label lcd-sms-consent">
-                    <input type="checkbox" id="lcd-optin-sms-consent-combined" name="sms_consent" value="1" required>
+                    <input type="checkbox" id="lcd-optin-sms-consent-combined" name="sms_consent" value="1">
                     <span class="checkmark"></span>
                     <span class="consent-text">
                         <?php echo wp_kses_post($settings['sms_disclaimer']); ?>

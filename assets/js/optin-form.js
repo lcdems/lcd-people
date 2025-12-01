@@ -75,6 +75,11 @@
             $(document).on('input change', '#lcd-optin-combined-form input', function() {
                 this.updateCombinedButtonState();
             }.bind(this));
+            
+            // Show/hide SMS consent based on phone input in combined form
+            $(document).on('input', '#lcd-optin-phone-combined', function() {
+                this.updateCombinedSMSVisibility();
+            }.bind(this));
         },
         
         updateSMSButtonState: function() {
@@ -93,24 +98,40 @@
         },
         
         updateCombinedButtonState: function() {
-            var firstName = $('#lcd-optin-first-name-combined').val().trim();
             var email = $('#lcd-optin-email-combined').val().trim();
             var phone = $('#lcd-optin-phone-combined').val().trim();
             var smsConsent = $('#lcd-optin-sms-consent-combined').is(':checked');
-            var mainConsent = $('#lcd-optin-main-consent-combined').is(':checked');
+            var mainConsentCheckbox = $('#lcd-optin-main-consent-combined');
+            var mainConsent = mainConsentCheckbox.length ? mainConsentCheckbox.is(':checked') : true;
             var submitBtn = $('#lcd-combined-submit-btn');
             
-            // All fields are required except last name
-            var allFieldsFilled = firstName && email && phone && smsConsent && mainConsent;
-            
-            // Basic email validation
+            // Basic email validation - email is the only required field
             var emailValid = email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
             
-            if (allFieldsFilled && emailValid) {
+            // If phone is entered, SMS consent is required
+            var smsValid = !phone || smsConsent;
+            
+            if (emailValid && mainConsent && smsValid) {
                 submitBtn.prop('disabled', false);
             } else {
                 submitBtn.prop('disabled', true);
             }
+        },
+        
+        updateCombinedSMSVisibility: function() {
+            var phone = $('#lcd-optin-phone-combined').val().trim();
+            var smsWrapper = $('#lcd-sms-consent-wrapper-combined');
+            var smsCheckbox = $('#lcd-optin-sms-consent-combined');
+            
+            if (phone) {
+                smsWrapper.slideDown(200);
+            } else {
+                smsWrapper.slideUp(200);
+                smsCheckbox.prop('checked', false);
+            }
+            
+            // Update button state after visibility change
+            this.updateCombinedButtonState();
         },
         
         submitEmailStep: function() {
@@ -174,17 +195,11 @@
             }
             
             var smsConsent = $('#lcd-optin-sms-consent-combined').is(':checked');
-            var phone = $('#lcd-optin-phone-combined').val();
+            var phone = $('#lcd-optin-phone-combined').val().trim();
             
-            // SMS consent is required
-            if (!smsConsent) {
-                this.showError('Please accept the SMS consent to continue.');
-                return;
-            }
-            
-            // Phone is required
-            if (!phone) {
-                this.showError('Phone number is required.');
+            // If phone is provided, SMS consent is required
+            if (phone && !smsConsent) {
+                this.showError('Please accept the SMS consent to receive text messages.');
                 return;
             }
             
@@ -196,8 +211,8 @@
                 email: $('#lcd-optin-email-combined').val(),
                 phone: phone,
                 groups: [],
-                sms_consent: 1,
-                main_consent: mainConsentCheckbox.is(':checked') ? 1 : 0
+                sms_consent: smsConsent ? 1 : 0,
+                main_consent: mainConsentCheckbox.length ? (mainConsentCheckbox.is(':checked') ? 1 : 0) : 1
             };
             
             // Get selected groups
@@ -217,12 +232,16 @@
             this.showLoading();
             
             var self = this;
+            var includedSMS = phone && smsConsent;
             $.post(lcdOptinVars.ajaxurl, formData)
                 .done(function(response) {
                     if (response.success) {
-                        // Fire conversion tracking for both email and SMS
+                        // Fire conversion tracking for email
                         self.fireEmailConversionTracking();
-                        self.fireSMSConversionTracking();
+                        // Fire SMS tracking only if phone was provided
+                        if (includedSMS) {
+                            self.fireSMSConversionTracking();
+                        }
                         self.showSuccess(response.data.message);
                     } else {
                         self.showError(response.data.message || lcdOptinVars.strings.error);

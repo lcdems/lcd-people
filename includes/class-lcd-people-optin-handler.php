@@ -305,10 +305,10 @@ class LCD_People_Optin_Handler {
         $sms_consent = !empty($_POST['sms_consent']);
         $main_consent = !empty($_POST['main_consent']);
         
-        // Validation - last_name is optional, all other fields are required
-        if (empty($first_name) || empty($email) || empty($phone)) {
+        // Validation - only email is required
+        if (empty($email)) {
             wp_send_json_error(array(
-                'message' => __('Please fill in all required fields.', 'lcd-people')
+                'message' => __('Please enter your email address.', 'lcd-people')
             ));
         }
         
@@ -326,18 +326,18 @@ class LCD_People_Optin_Handler {
             ));
         }
         
-        // SMS consent is required in combined form
-        if (!$sms_consent) {
+        // If phone is provided, SMS consent is required
+        if (!empty($phone) && !$sms_consent) {
             wp_send_json_error(array(
-                'message' => __('Please accept the SMS consent to continue.', 'lcd-people')
+                'message' => __('Please accept the SMS consent to receive text messages.', 'lcd-people')
             ));
         }
         
-        // Format phone number
-        $formatted_phone = $this->format_phone_number($phone);
+        // Format phone number if provided
+        $formatted_phone = !empty($phone) ? $this->format_phone_number($phone) : null;
         
-        // Sync to Sender.net with both email and SMS
-        $sync_result = $this->sync_to_sender($email, $first_name, $last_name, $groups, $formatted_phone);
+        // Sync to Sender.net (with SMS only if phone provided and consent given)
+        $sync_result = $this->sync_to_sender($email, $first_name, $last_name, $groups, ($sms_consent && $formatted_phone) ? $formatted_phone : null);
         
         if (!$sync_result['success']) {
             wp_send_json_error(array(
@@ -345,10 +345,16 @@ class LCD_People_Optin_Handler {
             ));
         }
         
-        // Success message
-        wp_send_json_success(array(
-            'message' => __('Thank you! You\'ve been added to our email and SMS lists.', 'lcd-people')
-        ));
+        // Success message based on whether SMS was included
+        if ($sms_consent && !empty($phone)) {
+            wp_send_json_success(array(
+                'message' => __('Thank you! You\'ve been added to our email and SMS lists.', 'lcd-people')
+            ));
+        } else {
+            wp_send_json_success(array(
+                'message' => __('Thank you! You\'ve been added to our email list.', 'lcd-people')
+            ));
+        }
     }
     
     /**
