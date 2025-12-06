@@ -1225,7 +1225,7 @@ class LCD_People_CallHub_Handler {
      * Create a webhook in CallHub
      * 
      * CallHub API: POST /webhooks/
-     * Required parameters: url, event
+     * Required parameters: target (URL), event
      * See: https://developer.callhub.io/reference/webhookspost
      * 
      * @param string $url Webhook URL to receive notifications
@@ -1233,9 +1233,9 @@ class LCD_People_CallHub_Handler {
      * @return array Result with success status and webhook data
      */
     public function create_webhook($url, $event) {
-        // CallHub API expects 'url' and 'event' parameters
+        // CallHub API expects 'target' and 'event' parameters
         $data = array(
-            'url' => $url,
+            'target' => $url,
             'event' => $event
         );
         
@@ -1268,6 +1268,8 @@ class LCD_People_CallHub_Handler {
             $error_message = $response['body']['detail'];
         } elseif (isset($response['body']['message'])) {
             $error_message = $response['body']['message'];
+        } elseif (isset($response['body']['target']) && is_array($response['body']['target'])) {
+            $error_message = 'Target URL error: ' . implode(' ', $response['body']['target']);
         } elseif (isset($response['body']['url']) && is_array($response['body']['url'])) {
             $error_message = 'URL error: ' . implode(' ', $response['body']['url']);
         } elseif (isset($response['body']['event']) && is_array($response['body']['event'])) {
