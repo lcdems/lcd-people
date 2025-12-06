@@ -916,6 +916,19 @@ class LCD_People_CallHub_Handler {
     /**
      * Handle incoming webhook from CallHub (STOP messages)
      * 
+     * CallHub webhook format for sb.reply and p2p.reply events:
+     * {
+     *   "hook": {},
+     *   "data": {
+     *     "content": "STOP",
+     *     "from_name": "John Doe",
+     *     "from_number": "16502293681",
+     *     "campaign": "Campaign Name"
+     *   }
+     * }
+     * 
+     * See: https://developer.callhub.io/reference/create-new-webhook
+     * 
      * @param WP_REST_Request $request
      * @return WP_REST_Response
      */
@@ -933,26 +946,33 @@ class LCD_People_CallHub_Handler {
             ), 400);
         }
         
-        // Extract phone number and event type from payload
-        // CallHub webhook structure may vary - adjust based on actual payload
-        $phone = isset($payload['phone']) ? $payload['phone'] : 
-                (isset($payload['phone_number']) ? $payload['phone_number'] : 
-                (isset($payload['contact']) ? $payload['contact'] : null));
+        // CallHub sends data in a nested 'data' object
+        $data = isset($payload['data']) ? $payload['data'] : $payload;
         
-        $event_type = isset($payload['event']) ? $payload['event'] : 
-                     (isset($payload['type']) ? $payload['type'] : 
-                     (isset($payload['status']) ? $payload['status'] : null));
+        // Extract phone number - CallHub uses 'from_number' for SMS replies
+        $phone = isset($data['from_number']) ? $data['from_number'] : 
+                (isset($data['phone_number']) ? $data['phone_number'] : 
+                (isset($data['contact']) ? $data['contact'] : 
+                (isset($data['mobile']) ? $data['mobile'] : null)));
         
-        $message_text = isset($payload['message']) ? strtoupper(trim($payload['message'])) : 
-                       (isset($payload['text']) ? strtoupper(trim($payload['text'])) : '');
+        // Extract message content - CallHub uses 'content' for SMS replies
+        $message_text = isset($data['content']) ? strtoupper(trim($data['content'])) : '';
+        
+        // Extract campaign name for logging
+        $campaign = isset($data['campaign']) ? $data['campaign'] : 'unknown';
+        $from_name = isset($data['from_name']) ? $data['from_name'] : '';
+        
+        error_log('LCD People: Webhook parsed - Phone: ' . ($phone ?? 'none') . ', Content: "' . $message_text . '", Campaign: ' . $campaign . ', From: ' . $from_name);
         
         // Check if this is a STOP/opt-out message
-        $is_stop = $event_type === 'STOP' || 
-                   $event_type === 'opt_out' || 
-                   $event_type === 'unsubscribe' ||
-                   in_array($message_text, array('STOP', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT'));
+        // Standard SMS opt-out keywords
+        $opt_out_keywords = array('STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT');
+        $is_stop = in_array($message_text, $opt_out_keywords);
+        
+        error_log('LCD People: Is opt-out message: ' . ($is_stop ? 'YES' : 'NO'));
         
         if (empty($phone)) {
+            error_log('LCD People: Webhook rejected - no phone number found in payload');
             return new WP_REST_Response(array(
                 'success' => false,
                 'message' => 'No phone number in payload'
@@ -963,6 +983,7 @@ class LCD_People_CallHub_Handler {
         
         if ($is_stop) {
             // Process STOP/opt-out
+            error_log('LCD People: Processing STOP request for phone: ' . $phone);
             $result = $this->process_stop_webhook($phone, $payload);
             
             return new WP_REST_Response(array(
@@ -971,7 +992,8 @@ class LCD_People_CallHub_Handler {
             ), $result['success'] ? 200 : 500);
         }
         
-        // For other webhook events, just acknowledge receipt
+        // For other webhook events (non-STOP messages), just acknowledge receipt
+        error_log('LCD People: Non-opt-out message received, acknowledging');
         return new WP_REST_Response(array(
             'success' => true,
             'message' => 'Webhook received'
@@ -979,7 +1001,10 @@ class LCD_People_CallHub_Handler {
     }
     
     /**
-     * Process STOP webhook - update local DB and Sender.net
+     * Process STOP webhook - update local DB and remove from SMS groups
+     * 
+     * Note: We do NOT remove the phone from Sender.net - we only remove from SMS opt-in groups.
+     * The phone number is retained across all systems; we're just syncing the opt-in status.
      * 
      * @param string $phone Phone number
      * @param array $payload Full webhook payload
@@ -987,6 +1012,7 @@ class LCD_People_CallHub_Handler {
      */
     private function process_stop_webhook($phone, $payload) {
         $errors = array();
+        $email = null;
         
         // 1. Find person by phone number in WordPress
         $person_id = $this->find_person_by_phone($phone);
@@ -997,18 +1023,23 @@ class LCD_People_CallHub_Handler {
             update_post_meta($person_id, '_lcd_person_sms_opt_out_date', current_time('mysql'));
             update_post_meta($person_id, '_lcd_person_sms_opt_out_source', 'callhub_stop');
             
-            error_log('LCD People: Updated person ' . $person_id . ' SMS opt-out via CallHub STOP');
+            // Get email for Sender.net group removal
+            $email = get_post_meta($person_id, '_lcd_person_email', true);
+            
+            error_log('LCD People: Updated person ' . $person_id . ' SMS opt-out via CallHub STOP (email: ' . ($email ?: 'none') . ')');
         } else {
             error_log('LCD People: No person found for phone ' . $phone . ' (CallHub STOP webhook)');
         }
         
-        // 2. Remove phone from Sender.net subscriber
-        $sender_result = $this->remove_phone_from_sender($phone);
-        if (!$sender_result['success']) {
-            $errors[] = $sender_result['message'];
+        // 2. Remove from SMS opt-in groups in Sender.net (keep phone number, just remove groups)
+        if (!empty($email)) {
+            $sender_result = $this->remove_from_sms_groups($email);
+            if (!$sender_result['success']) {
+                $errors[] = $sender_result['message'];
+            }
         }
         
-        // 3. Make sure phone is on CallHub DNC (should already be, but confirm)
+        // 3. Make sure phone is on CallHub DNC
         $dnc_result = $this->add_to_dnc($phone);
         if (!$dnc_result['success']) {
             $errors[] = $dnc_result['message'];
@@ -1018,6 +1049,81 @@ class LCD_People_CallHub_Handler {
             return array(
                 'success' => true,
                 'message' => __('STOP processed successfully.', 'lcd-people')
+            );
+        }
+        
+        return array(
+            'success' => false,
+            'message' => implode('; ', $errors)
+        );
+    }
+    
+    /**
+     * Remove subscriber from SMS opt-in groups in Sender.net
+     * 
+     * This removes the user from SMS groups but keeps their phone number in the system.
+     * 
+     * @param string $email Email address
+     * @return array Result with success status and message
+     */
+    private function remove_from_sms_groups($email) {
+        $token = get_option('lcd_people_sender_token');
+        
+        if (empty($token)) {
+            return array(
+                'success' => true, // Not an error if not configured
+                'message' => __('Sender.net not configured.', 'lcd-people')
+            );
+        }
+        
+        // Get SMS opt-in groups from settings
+        $group_assignments = get_option('lcd_people_sender_group_assignments', array());
+        $sms_groups = $group_assignments['sms_optin'] ?? array();
+        
+        if (empty($sms_groups)) {
+            return array(
+                'success' => true,
+                'message' => __('No SMS groups configured.', 'lcd-people')
+            );
+        }
+        
+        $removed_count = 0;
+        $errors = array();
+        
+        foreach ($sms_groups as $group_id) {
+            $response = wp_remote_request("https://api.sender.net/v2/subscribers/groups/{$group_id}", array(
+                'method' => 'DELETE',
+                'headers' => array(
+                    'Authorization' => 'Bearer ' . $token,
+                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/json'
+                ),
+                'body' => json_encode(array(
+                    'subscribers' => array($email)
+                )),
+                'timeout' => 15
+            ));
+            
+            if (is_wp_error($response)) {
+                $errors[] = 'Group ' . $group_id . ': ' . $response->get_error_message();
+                continue;
+            }
+            
+            $status = wp_remote_retrieve_response_code($response);
+            if (in_array($status, array(200, 204))) {
+                $removed_count++;
+                error_log('LCD People: Removed ' . $email . ' from SMS group ' . $group_id);
+            } else {
+                $body = json_decode(wp_remote_retrieve_body($response), true);
+                $error_msg = $body['message'] ?? "Status $status";
+                $errors[] = 'Group ' . $group_id . ': ' . $error_msg;
+            }
+        }
+        
+        if ($removed_count > 0 || empty($errors)) {
+            return array(
+                'success' => true,
+                'message' => sprintf(__('Removed from %d SMS group(s).', 'lcd-people'), $removed_count)
             );
         }
         
