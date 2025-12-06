@@ -1206,7 +1206,7 @@ class LCD_People_CallHub_Handler {
             );
         }
         
-        error_log('LCD People: get_webhooks raw response: ' . json_encode($response['body']));
+        error_log('LCD People: get_webhooks raw response: ' . print_r($response['body'], true));
         
         if ($response['status_code'] === 200) {
             $webhooks = isset($response['body']['results']) ? $response['body']['results'] : 
@@ -1354,11 +1354,11 @@ class LCD_People_CallHub_Handler {
         
         if ($existing['success'] && !empty($existing['webhooks'])) {
             foreach ($existing['webhooks'] as $webhook) {
-                // CallHub may return URL as 'url', 'target_url', or 'target'
-                $webhook_url_value = $webhook['url'] ?? $webhook['target_url'] ?? $webhook['target'] ?? '';
+                // CallHub returns 'target' for the destination URL we registered
+                $webhook_url_value = $webhook['target'] ?? $webhook['target_url'] ?? $webhook['url'] ?? '';
                 $webhook_event = $webhook['event'] ?? '';
                 $existing_urls[$webhook_event] = $webhook_url_value;
-                error_log('LCD People: Found existing webhook - Event: ' . $webhook_event . ', URL: ' . $webhook_url_value);
+                error_log('LCD People: Found existing webhook - Event: ' . $webhook_event . ', Target: ' . $webhook_url_value);
             }
         }
         
@@ -1416,9 +1416,12 @@ class LCD_People_CallHub_Handler {
         
         $our_webhooks = array();
         foreach ($existing['webhooks'] as $webhook) {
-            // CallHub may return URL as 'url', 'target_url', or 'target'
-            $webhook_url_value = $webhook['url'] ?? $webhook['target_url'] ?? $webhook['target'] ?? '';
-            error_log('LCD People: get_webhook_status - Checking webhook URL: ' . $webhook_url_value . ' (event: ' . ($webhook['event'] ?? 'unknown') . ')');
+            // Log all webhook fields to find the right one
+            error_log('LCD People: get_webhook_status - Full webhook data: ' . json_encode($webhook));
+            
+            // CallHub returns 'target' for the destination URL we registered
+            $webhook_url_value = $webhook['target'] ?? $webhook['target_url'] ?? $webhook['url'] ?? '';
+            error_log('LCD People: get_webhook_status - Checking webhook target: ' . $webhook_url_value . ' (event: ' . ($webhook['event'] ?? 'unknown') . ')');
             if ($webhook_url_value === $webhook_url) {
                 $our_webhooks[] = $webhook;
             }
