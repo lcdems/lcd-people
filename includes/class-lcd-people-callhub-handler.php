@@ -1224,24 +1224,35 @@ class LCD_People_CallHub_Handler {
     /**
      * Create a webhook in CallHub
      * 
+     * CallHub API: POST /webhooks/
+     * Required parameters: url, event
+     * See: https://developer.callhub.io/reference/webhookspost
+     * 
      * @param string $url Webhook URL to receive notifications
      * @param string $event Event type to subscribe to
      * @return array Result with success status and webhook data
      */
     public function create_webhook($url, $event) {
+        // CallHub API expects 'url' and 'event' parameters
         $data = array(
-            'target_url' => $url,
+            'url' => $url,
             'event' => $event
         );
+        
+        error_log('LCD People: Creating CallHub webhook - URL: ' . $url . ', Event: ' . $event);
+        error_log('LCD People: Webhook request body: ' . json_encode($data));
         
         $response = $this->api_request('webhooks/', 'POST', $data);
         
         if (is_wp_error($response)) {
+            error_log('LCD People: Webhook creation WP_Error: ' . $response->get_error_message());
             return array(
                 'success' => false,
                 'message' => $response->get_error_message()
             );
         }
+        
+        error_log('LCD People: Webhook creation response - Status: ' . $response['status_code'] . ', Body: ' . json_encode($response['body']));
         
         if (in_array($response['status_code'], array(200, 201))) {
             return array(
@@ -1251,10 +1262,23 @@ class LCD_People_CallHub_Handler {
             );
         }
         
-        $error_message = isset($response['body']['detail']) ? $response['body']['detail'] : 
-                        (isset($response['body']['message']) ? $response['body']['message'] : 
-                        (isset($response['body']['url']) ? implode(' ', (array)$response['body']['url']) :
-                        json_encode($response['body'])));
+        // Build error message from various possible response formats
+        $error_message = '';
+        if (isset($response['body']['detail'])) {
+            $error_message = $response['body']['detail'];
+        } elseif (isset($response['body']['message'])) {
+            $error_message = $response['body']['message'];
+        } elseif (isset($response['body']['url']) && is_array($response['body']['url'])) {
+            $error_message = 'URL error: ' . implode(' ', $response['body']['url']);
+        } elseif (isset($response['body']['event']) && is_array($response['body']['event'])) {
+            $error_message = 'Event error: ' . implode(' ', $response['body']['event']);
+        } elseif (isset($response['body']['non_field_errors']) && is_array($response['body']['non_field_errors'])) {
+            $error_message = implode(' ', $response['body']['non_field_errors']);
+        } else {
+            $error_message = 'Status ' . $response['status_code'] . ': ' . json_encode($response['body']);
+        }
+        
+        error_log('LCD People: Webhook creation failed: ' . $error_message);
         
         return array(
             'success' => false,
@@ -1293,16 +1317,24 @@ class LCD_People_CallHub_Handler {
     
     /**
      * Register webhook for SMS opt-out events
-     * Creates webhooks for relevant SMS events (sb.reply for SMS broadcast replies)
+     * Creates webhooks for relevant SMS events
+     * 
+     * CallHub webhook events (see https://developer.callhub.io/reference/webhookspost):
+     * - sb.reply: SMS Broadcast reply
+     * - p2p.reply: Peer-to-peer texting reply
+     * - vb.transfer: Voice broadcast transfer
+     * - cc.transfer: Call center transfer
      * 
      * @return array Result with success status and details
      */
     public function register_sms_webhook() {
         $webhook_url = rest_url('lcd-people/v1/callhub-webhook');
         
-        // Common SMS-related events in CallHub
-        // sb.reply = SMS Broadcast reply
-        // p2p.reply = Peer-to-peer texting reply
+        error_log('LCD People: Registering SMS webhook to URL: ' . $webhook_url);
+        
+        // SMS-related events in CallHub
+        // sb.reply = SMS Broadcast reply (for STOP messages)
+        // p2p.reply = Peer-to-peer texting reply (for STOP messages)
         $events_to_register = array('sb.reply', 'p2p.reply');
         
         $results = array();
@@ -1312,11 +1344,15 @@ class LCD_People_CallHub_Handler {
         $existing = $this->get_webhooks();
         $existing_urls = array();
         
+        error_log('LCD People: Existing webhooks response: ' . json_encode($existing));
+        
         if ($existing['success'] && !empty($existing['webhooks'])) {
             foreach ($existing['webhooks'] as $webhook) {
-                // CallHub may return URL as 'target_url' or 'url'
-                $webhook_url_value = $webhook['target_url'] ?? $webhook['url'] ?? '';
-                $existing_urls[$webhook['event'] ?? ''] = $webhook_url_value;
+                // CallHub may return URL as 'url', 'target_url', or 'target'
+                $webhook_url_value = $webhook['url'] ?? $webhook['target_url'] ?? $webhook['target'] ?? '';
+                $webhook_event = $webhook['event'] ?? '';
+                $existing_urls[$webhook_event] = $webhook_url_value;
+                error_log('LCD People: Found existing webhook - Event: ' . $webhook_event . ', URL: ' . $webhook_url_value);
             }
         }
         
@@ -1329,6 +1365,7 @@ class LCD_People_CallHub_Handler {
                     'skipped' => true
                 );
                 $success_count++;
+                error_log('LCD People: Skipping webhook for event ' . $event . ' - already registered');
                 continue;
             }
             
@@ -1339,6 +1376,8 @@ class LCD_People_CallHub_Handler {
                 $success_count++;
             }
         }
+        
+        error_log('LCD People: Webhook registration complete - ' . $success_count . ' of ' . count($events_to_register) . ' succeeded');
         
         return array(
             'success' => $success_count > 0,
@@ -1366,7 +1405,9 @@ class LCD_People_CallHub_Handler {
         
         $our_webhooks = array();
         foreach ($existing['webhooks'] as $webhook) {
-            if (isset($webhook['url']) && $webhook['url'] === $webhook_url) {
+            // CallHub may return URL as 'url', 'target_url', or 'target'
+            $webhook_url_value = $webhook['url'] ?? $webhook['target_url'] ?? $webhook['target'] ?? '';
+            if ($webhook_url_value === $webhook_url) {
                 $our_webhooks[] = $webhook;
             }
         }
