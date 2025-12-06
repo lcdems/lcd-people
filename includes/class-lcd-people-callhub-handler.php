@@ -1198,6 +1198,7 @@ class LCD_People_CallHub_Handler {
         $response = $this->api_request('webhooks/');
         
         if (is_wp_error($response)) {
+            error_log('LCD People: get_webhooks error: ' . $response->get_error_message());
             return array(
                 'success' => false,
                 'message' => $response->get_error_message(),
@@ -1205,9 +1206,12 @@ class LCD_People_CallHub_Handler {
             );
         }
         
+        error_log('LCD People: get_webhooks raw response: ' . json_encode($response['body']));
+        
         if ($response['status_code'] === 200) {
             $webhooks = isset($response['body']['results']) ? $response['body']['results'] : 
                        (is_array($response['body']) ? $response['body'] : array());
+            error_log('LCD People: get_webhooks parsed ' . count($webhooks) . ' webhooks');
             return array(
                 'success' => true,
                 'webhooks' => $webhooks
@@ -1395,9 +1399,12 @@ class LCD_People_CallHub_Handler {
      */
     public function get_webhook_status() {
         $webhook_url = rest_url('lcd-people/v1/callhub-webhook');
+        error_log('LCD People: get_webhook_status - Looking for URL: ' . $webhook_url);
+        
         $existing = $this->get_webhooks();
         
         if (!$existing['success']) {
+            error_log('LCD People: get_webhook_status - Failed to get webhooks: ' . ($existing['message'] ?? 'unknown error'));
             return array(
                 'registered' => false,
                 'message' => $existing['message'] ?? __('Could not check webhook status.', 'lcd-people'),
@@ -1405,14 +1412,19 @@ class LCD_People_CallHub_Handler {
             );
         }
         
+        error_log('LCD People: get_webhook_status - Found ' . count($existing['webhooks']) . ' total webhooks');
+        
         $our_webhooks = array();
         foreach ($existing['webhooks'] as $webhook) {
             // CallHub may return URL as 'url', 'target_url', or 'target'
             $webhook_url_value = $webhook['url'] ?? $webhook['target_url'] ?? $webhook['target'] ?? '';
+            error_log('LCD People: get_webhook_status - Checking webhook URL: ' . $webhook_url_value . ' (event: ' . ($webhook['event'] ?? 'unknown') . ')');
             if ($webhook_url_value === $webhook_url) {
                 $our_webhooks[] = $webhook;
             }
         }
+        
+        error_log('LCD People: get_webhook_status - Matched ' . count($our_webhooks) . ' webhooks for this site');
         
         return array(
             'registered' => !empty($our_webhooks),
