@@ -1230,7 +1230,7 @@ class LCD_People_CallHub_Handler {
      */
     public function create_webhook($url, $event) {
         $data = array(
-            'url' => $url,
+            'target_url' => $url,
             'event' => $event
         );
         
@@ -1314,7 +1314,9 @@ class LCD_People_CallHub_Handler {
         
         if ($existing['success'] && !empty($existing['webhooks'])) {
             foreach ($existing['webhooks'] as $webhook) {
-                $existing_urls[$webhook['event'] ?? ''] = $webhook['url'] ?? '';
+                // CallHub may return URL as 'target_url' or 'url'
+                $webhook_url_value = $webhook['target_url'] ?? $webhook['url'] ?? '';
+                $existing_urls[$webhook['event'] ?? ''] = $webhook_url_value;
             }
         }
         
