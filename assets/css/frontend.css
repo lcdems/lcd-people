@@ -767,4 +767,247 @@
         width: 100%;
         margin-right: 0;
     }
+}
+
+/* Preferences Sections */
+.lcd-preferences-section {
+    margin-bottom: 30px;
+    padding-bottom: 30px;
+    border-bottom: 1px solid var(--color-border, #E5E5E5);
+}
+
+.lcd-preferences-section:last-of-type {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.lcd-preferences-section h3 {
+    font-size: var(--font-size-xl, 1.25rem);
+    color: var(--color-secondary, #002B50);
+    margin-bottom: var(--spacing-xs, 0.5rem);
+    margin-top: 0;
+}
+
+.lcd-preferences-section > p {
+    color: var(--color-text-muted, #6B7280);
+    margin-bottom: var(--spacing-md, 1.5rem);
+}
+
+/* SMS Toggle Switch */
+.lcd-sms-toggle-container {
+    background: var(--color-bg-light, #F9FAFB);
+    border: 1px solid var(--color-border, #E5E5E5);
+    border-radius: var(--border-radius, 6px);
+    padding: var(--spacing-md, 1.5rem);
+}
+
+.lcd-toggle-wrapper {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm, 1rem);
+    margin-bottom: var(--spacing-sm, 1rem);
+}
+
+.lcd-toggle {
+    position: relative;
+    display: inline-block;
+    width: 52px;
+    height: 28px;
+    flex-shrink: 0;
+}
+
+.lcd-toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.lcd-toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: 0.3s;
+    border-radius: 28px;
+}
+
+.lcd-toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 20px;
+    width: 20px;
+    left: 4px;
+    bottom: 4px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.lcd-toggle input:checked + .lcd-toggle-slider {
+    background-color: #4CAF50;
+}
+
+.lcd-toggle input:checked + .lcd-toggle-slider:before {
+    transform: translateX(24px);
+}
+
+.lcd-toggle input:focus + .lcd-toggle-slider {
+    box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.3);
+}
+
+.lcd-toggle-label {
+    font-weight: 600;
+    color: var(--color-secondary, #002B50);
+    cursor: pointer;
+    user-select: none;
+}
+
+/* SMS Panels */
+.lcd-sms-panel {
+    margin-top: var(--spacing-md, 1rem);
+    padding: var(--spacing-md, 1rem);
+    background: white;
+    border: 1px solid var(--color-border, #E5E5E5);
+    border-radius: var(--border-radius, 6px);
+}
+
+.lcd-sms-panel.lcd-sms-warning {
+    background: #fff8e1;
+    border-color: var(--color-accent, #ee8f13);
+}
+
+.lcd-sms-consent-wrapper {
+    margin-bottom: var(--spacing-md, 1rem);
+}
+
+.lcd-sms-consent-wrapper .subscription-checkbox-label {
+    margin: 0;
+}
+
+.lcd-sms-actions {
+    display: flex;
+    gap: var(--spacing-sm, 0.75rem);
+    flex-wrap: wrap;
+}
+
+.lcd-sms-actions .lcd-btn {
+    margin: 0;
+}
+
+.lcd-sms-phone-notice {
+    margin-top: var(--spacing-sm, 0.75rem);
+    color: var(--color-accent, #ee8f13);
+    font-size: var(--font-size-sm, 0.875rem);
+    font-style: italic;
+}
+
+.lcd-sms-status-text {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs, 0.5rem);
+    margin: 0;
+    font-weight: 500;
+}
+
+.lcd-sms-status-text .dashicons-yes-alt {
+    color: #4CAF50;
+}
+
+.lcd-sms-status-text.lcd-muted {
+    color: var(--color-text-muted, #6B7280);
+}
+
+.lcd-warning-text {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-xs, 0.5rem);
+    margin: 0 0 var(--spacing-md, 1rem) 0;
+    color: #856404;
+}
+
+.lcd-warning-text .dashicons-warning {
+    color: var(--color-accent, #ee8f13);
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+/* Modal Overlays */
+.lcd-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100000;
+}
+
+.lcd-modal-content {
+    background: white;
+    padding: var(--spacing-lg, 2rem);
+    border-radius: var(--border-radius, 8px);
+    max-width: 450px;
+    width: 90%;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.lcd-modal-content h4 {
+    margin: 0 0 var(--spacing-sm, 1rem) 0;
+    color: var(--color-secondary, #002B50);
+}
+
+.lcd-modal-content p {
+    margin: 0 0 var(--spacing-md, 1.5rem) 0;
+    color: var(--color-text, #374151);
+    line-height: 1.6;
+}
+
+.lcd-modal-actions {
+    display: flex;
+    gap: var(--spacing-sm, 0.75rem);
+    justify-content: flex-end;
+    flex-wrap: wrap;
+}
+
+.lcd-modal-actions .lcd-btn {
+    margin: 0;
+}
+
+/* Responsive SMS Section */
+@media (max-width: 768px) {
+    .lcd-sms-toggle-container {
+        padding: var(--spacing-sm, 1rem);
+    }
+    
+    .lcd-toggle-wrapper {
+        flex-direction: row;
+    }
+    
+    .lcd-sms-actions {
+        flex-direction: column;
+    }
+    
+    .lcd-sms-actions .lcd-btn {
+        width: 100%;
+    }
+    
+    .lcd-modal-content {
+        margin: var(--spacing-sm, 1rem);
+        padding: var(--spacing-md, 1.5rem);
+    }
+    
+    .lcd-modal-actions {
+        flex-direction: column;
+    }
+    
+    .lcd-modal-actions .lcd-btn {
+        width: 100%;
+    }
 } 

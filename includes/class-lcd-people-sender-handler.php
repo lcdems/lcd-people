@@ -104,12 +104,20 @@ class LCD_People_Sender_Handler {
             }
         }
 
-        // Add new member group if this is a new activation
+        // Add new member groups if this is a new activation
         if ($is_new_activation) {
             $group_assignments = get_option('lcd_people_sender_group_assignments', array());
-            $new_member_group = $group_assignments['new_member'] ?? '';
-            if (!empty($new_member_group) && !in_array($new_member_group, $groups) && $trigger_automation) {
-                $groups[] = $new_member_group;
+            $new_member_groups = $group_assignments['new_member'] ?? array();
+            // Handle both old single-value and new array format
+            if (!is_array($new_member_groups)) {
+                $new_member_groups = !empty($new_member_groups) ? array($new_member_groups) : array();
+            }
+            if (!empty($new_member_groups) && $trigger_automation) {
+                foreach ($new_member_groups as $new_member_group) {
+                    if (!in_array($new_member_group, $groups)) {
+                        $groups[] = $new_member_group;
+                    }
+                }
             }
         }
 
@@ -229,10 +237,14 @@ class LCD_People_Sender_Handler {
 
         $token = get_option('lcd_people_sender_token');
         $group_assignments = get_option('lcd_people_sender_group_assignments', array());
-        $volunteer_group_id = $group_assignments['new_volunteer'] ?? '';
+        $volunteer_groups = $group_assignments['new_volunteer'] ?? array();
+        // Handle both old single-value and new array format
+        if (!is_array($volunteer_groups)) {
+            $volunteer_groups = !empty($volunteer_groups) ? array($volunteer_groups) : array();
+        }
         
-        if (empty($token) || empty($volunteer_group_id)) {
-            $this->add_sync_record($person_id, 'Sender.net', false, 'Volunteer sync skipped: Missing API token or volunteer group ID');
+        if (empty($token) || empty($volunteer_groups)) {
+            $this->add_sync_record($person_id, 'Sender.net', false, 'Volunteer sync skipped: Missing API token or volunteer group IDs');
             return false;
         }
 
@@ -260,9 +272,11 @@ class LCD_People_Sender_Handler {
             }
         }
 
-        // Add volunteer group if not already present
-        if (!in_array($volunteer_group_id, $existing_groups)) {
-            $existing_groups[] = $volunteer_group_id;
+        // Add volunteer groups if not already present
+        foreach ($volunteer_groups as $volunteer_group_id) {
+            if (!in_array($volunteer_group_id, $existing_groups)) {
+                $existing_groups[] = $volunteer_group_id;
+            }
         }
 
         $subscriber_data = array(
@@ -322,13 +336,17 @@ class LCD_People_Sender_Handler {
      * @return array Response array with success status and message
      */
     public function retrigger_welcome_automation($person_id) {
-        // Get the new member group ID
+        // Get the new member group IDs
         $group_assignments = get_option('lcd_people_sender_group_assignments', array());
-        $new_member_group = $group_assignments['new_member'] ?? '';
-        if (empty($new_member_group)) {
+        $new_member_groups = $group_assignments['new_member'] ?? array();
+        // Handle both old single-value and new array format
+        if (!is_array($new_member_groups)) {
+            $new_member_groups = !empty($new_member_groups) ? array($new_member_groups) : array();
+        }
+        if (empty($new_member_groups)) {
             return array(
                 'success' => false,
-                'message' => __('New member group ID not configured.', 'lcd-people')
+                'message' => __('New member group IDs not configured.', 'lcd-people')
             );
         }
 
@@ -377,17 +395,19 @@ class LCD_People_Sender_Handler {
         $subscriber = $body['data'];
         $groups = array();
         
-        // Get current groups, excluding the new member group
+        // Get current groups, excluding the new member groups
         if (isset($subscriber['subscriber_tags'])) {
             foreach ($subscriber['subscriber_tags'] as $tag) {
-                if ($tag['id'] !== $new_member_group) {
+                if (!in_array($tag['id'], $new_member_groups)) {
                     $groups[] = $tag['id'];
                 }
             }
         }
 
-        // Add the new member group back
-        $groups[] = $new_member_group;
+        // Add the new member groups back
+        foreach ($new_member_groups as $new_member_group) {
+            $groups[] = $new_member_group;
+        }
 
         // Update subscriber with modified groups
         $subscriber_data = array(

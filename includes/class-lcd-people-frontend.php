@@ -152,8 +152,14 @@ class LCD_People_Frontend {
                 'error' => __('An error occurred. Please try again.', 'lcd-people'),
                 'confirm_unsubscribe' => __('Are you sure you want to unsubscribe from all email communications? This action cannot be undone.', 'lcd-people'),
                 'updating' => __('Updating...', 'lcd-people'),
+                'processing' => __('Processing...', 'lcd-people'),
                 'success' => __('Changes saved successfully!', 'lcd-people'),
-                'update_preferences_btn' => __('Update Preferences', 'lcd-people')
+                'update_preferences_btn' => __('Update Preferences', 'lcd-people'),
+                'phone_required' => __('Please enter a phone number first.', 'lcd-people'),
+                'sms_optin_btn' => __('Opt In to SMS', 'lcd-people'),
+                'sms_optout_btn' => __('Yes, Opt Out', 'lcd-people'),
+                'sms_optin_success' => __('You have successfully opted in to SMS messages!', 'lcd-people'),
+                'sms_optout_success' => __('You have been opted out of SMS messages.', 'lcd-people')
             )
         ));
     }
@@ -316,7 +322,7 @@ class LCD_People_Frontend {
                             aria-controls="subscriptions-tab"
                             aria-selected="false"
                             id="subscriptions-tab-button">
-                        <?php _e('Email Preferences', 'lcd-people'); ?>
+                        <?php _e('Communication Preferences', 'lcd-people'); ?>
                     </button>
                 </div>
                 
@@ -791,6 +797,9 @@ class LCD_People_Frontend {
      * Render the subscription preferences tab content
      */
     private function render_subscription_preferences_tab($email) {
+        // Get SMS disclaimer from settings
+        $sms_disclaimer = get_option('lcd_people_optin_sms_disclaimer', 'By checking this box, you consent to receive text messages from us. Message and data rates may apply. Reply STOP to opt out at any time.');
+        
         ob_start();
         ?>
         <div class="lcd-subscription-preferences">
@@ -807,57 +816,153 @@ class LCD_People_Frontend {
             </div>
             
             <div id="subscription-form-container" style="display: none;">
-                <h3><?php _e('Email Subscription Preferences', 'lcd-people'); ?></h3>
-                <p><?php _e('Manage your email subscriptions and communication preferences below.', 'lcd-people'); ?></p>
+                <!-- Email Preferences Section -->
+                <div class="lcd-preferences-section">
+                    <h3><?php _e('Email Preferences', 'lcd-people'); ?></h3>
+                    <p><?php _e('Manage your email subscriptions and communication preferences below.', 'lcd-people'); ?></p>
+                    
+                    <form id="subscription-preferences-form">
+                        <div class="subscription-form-group">
+                            <label for="sub-email"><?php _e('Email Address', 'lcd-people'); ?></label>
+                            <input type="email" id="sub-email" name="email" readonly>
+                            <p class="description"><?php _e('Your email address cannot be changed here. Contact us if you need to update it.', 'lcd-people'); ?></p>
+                        </div>
+                        
+                        <div class="subscription-form-group">
+                            <label for="sub-first-name"><?php _e('First Name', 'lcd-people'); ?> <span class="required">*</span></label>
+                            <input type="text" id="sub-first-name" name="first_name" required>
+                        </div>
+                        
+                        <div class="subscription-form-group">
+                            <label for="sub-last-name"><?php _e('Last Name', 'lcd-people'); ?> <span class="required">*</span></label>
+                            <input type="text" id="sub-last-name" name="last_name" required>
+                        </div>
+                        
+                        <div class="subscription-form-group">
+                            <label for="sub-phone"><?php _e('Phone Number', 'lcd-people'); ?></label>
+                            <input type="tel" id="sub-phone" name="phone" placeholder="(555) 123-4567">
+                            <input type="hidden" id="sub-phone-original" name="phone_original" value="">
+                        </div>
+                        
+                        <div class="subscription-form-group">
+                            <label><?php _e('Email Interests', 'lcd-people'); ?></label>
+                            <div id="subscription-groups" class="subscription-checkbox-group">
+                                <!-- Groups will be populated via JavaScript -->
+                            </div>
+                        </div>
+                        
+                        <div class="subscription-form-actions">
+                            <button type="submit" class="lcd-btn lcd-btn-primary">
+                                <?php _e('Update Preferences', 'lcd-people'); ?>
+                            </button>
+                            <button type="button" id="unsubscribe-all-btn" class="lcd-btn lcd-btn-danger">
+                                <?php _e('Unsubscribe from All', 'lcd-people'); ?>
+                            </button>
+                        </div>
+                    </form>
+                </div>
                 
-                <form id="subscription-preferences-form">
-                    <div class="subscription-form-group">
-                        <label for="sub-email"><?php _e('Email Address', 'lcd-people'); ?></label>
-                        <input type="email" id="sub-email" name="email" readonly>
-                        <p class="description"><?php _e('Your email address cannot be changed here. Contact us if you need to update it.', 'lcd-people'); ?></p>
-                    </div>
+                <!-- SMS Preferences Section -->
+                <div class="lcd-preferences-section lcd-sms-preferences-section">
+                    <h3><?php _e('SMS Preferences', 'lcd-people'); ?></h3>
+                    <p><?php _e('Manage your text message preferences below.', 'lcd-people'); ?></p>
                     
-                    <div class="subscription-form-group">
-                        <label for="sub-first-name"><?php _e('First Name', 'lcd-people'); ?> <span class="required">*</span></label>
-                        <input type="text" id="sub-first-name" name="first_name" required>
-                    </div>
-                    
-                    <div class="subscription-form-group">
-                        <label for="sub-last-name"><?php _e('Last Name', 'lcd-people'); ?> <span class="required">*</span></label>
-                        <input type="text" id="sub-last-name" name="last_name" required>
-                    </div>
-                    
-                    <div class="subscription-form-group">
-                        <label for="sub-phone"><?php _e('Phone Number', 'lcd-people'); ?></label>
-                        <input type="tel" id="sub-phone" name="phone" placeholder="(555) 123-4567">
-                    </div>
-                    
-                    <div class="subscription-form-group">
-                        <label class="subscription-checkbox-label">
-                            <input type="checkbox" id="sub-sms-consent" name="sms_consent" value="1">
-                            <span class="checkmark"></span>
-                            <span class="consent-text">
-                                <?php _e('I consent to receive text messages. Message and data rates may apply. Reply STOP to opt out.', 'lcd-people'); ?>
-                            </span>
-                        </label>
-                    </div>
-                    
-                    <div class="subscription-form-group">
-                        <label><?php _e('Email Interests', 'lcd-people'); ?></label>
-                        <div id="subscription-groups" class="subscription-checkbox-group">
-                            <!-- Groups will be populated via JavaScript -->
+                    <div class="lcd-sms-toggle-container">
+                        <div class="lcd-toggle-wrapper">
+                            <label class="lcd-toggle">
+                                <input type="checkbox" id="sms-optin-toggle" name="sms_optin_toggle">
+                                <span class="lcd-toggle-slider"></span>
+                            </label>
+                            <label for="sms-optin-toggle" class="lcd-toggle-label">
+                                <?php _e('Opt in to SMS messages', 'lcd-people'); ?>
+                            </label>
+                        </div>
+                        
+                        <!-- SMS Opt-in Panel (shown when toggle is ON but not yet opted in) -->
+                        <div id="sms-optin-panel" class="lcd-sms-panel" style="display: none;">
+                            <div class="lcd-sms-consent-wrapper">
+                                <label class="subscription-checkbox-label">
+                                    <input type="checkbox" id="sms-consent-checkbox" name="sms_consent_checkbox" value="1">
+                                    <span class="checkmark"></span>
+                                    <span class="consent-text">
+                                        <?php echo wp_kses_post($sms_disclaimer); ?>
+                                    </span>
+                                </label>
+                            </div>
+                            <div class="lcd-sms-actions">
+                                <button type="button" id="sms-optin-btn" class="lcd-btn lcd-btn-primary" disabled>
+                                    <?php _e('Opt In to SMS', 'lcd-people'); ?>
+                                </button>
+                            </div>
+                            <p class="lcd-sms-phone-notice" id="sms-phone-required-notice" style="display: none;">
+                                <?php _e('Please add your phone number above and save your profile before opting in to SMS.', 'lcd-people'); ?>
+                            </p>
+                        </div>
+                        
+                        <!-- SMS Opted-in Status (shown when user is already opted in) -->
+                        <div id="sms-optedin-status" class="lcd-sms-panel" style="display: none;">
+                            <p class="lcd-sms-status-text">
+                                <span class="dashicons dashicons-yes-alt"></span>
+                                <?php _e('You are currently opted in to SMS messages.', 'lcd-people'); ?>
+                            </p>
+                        </div>
+                        
+                        <!-- SMS Opt-out Confirmation (shown when toggling OFF) -->
+                        <div id="sms-optout-confirm" class="lcd-sms-panel lcd-sms-warning" style="display: none;">
+                            <p class="lcd-warning-text">
+                                <span class="dashicons dashicons-warning"></span>
+                                <?php _e('Are you sure you want to opt out of SMS messages? You will no longer receive text updates from us.', 'lcd-people'); ?>
+                            </p>
+                            <div class="lcd-sms-actions">
+                                <button type="button" id="sms-optout-confirm-btn" class="lcd-btn lcd-btn-danger">
+                                    <?php _e('Yes, Opt Out', 'lcd-people'); ?>
+                                </button>
+                                <button type="button" id="sms-optout-cancel-btn" class="lcd-btn lcd-btn-secondary">
+                                    <?php _e('Cancel', 'lcd-people'); ?>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- SMS Not Opted-in Status (shown when toggle is OFF and not opted in) -->
+                        <div id="sms-not-optedin-status" class="lcd-sms-panel" style="display: none;">
+                            <p class="lcd-sms-status-text lcd-muted">
+                                <?php _e('You are not currently opted in to SMS messages.', 'lcd-people'); ?>
+                            </p>
                         </div>
                     </div>
-                    
-                    <div class="subscription-form-actions">
-                        <button type="submit" class="lcd-btn lcd-btn-primary">
-                            <?php _e('Update Preferences', 'lcd-people'); ?>
-                        </button>
-                        <button type="button" id="unsubscribe-all-btn" class="lcd-btn lcd-btn-danger">
-                            <?php _e('Unsubscribe from All', 'lcd-people'); ?>
-                        </button>
+                </div>
+                
+                <!-- Phone Number Change Warning Modal -->
+                <div id="phone-change-warning" class="lcd-modal-overlay" style="display: none;">
+                    <div class="lcd-modal-content">
+                        <h4><?php _e('Phone Number Change Detected', 'lcd-people'); ?></h4>
+                        <p><?php _e('You have changed your phone number. If you save this change, your SMS opt-in status will be reset and you will need to re-opt in with your new number.', 'lcd-people'); ?></p>
+                        <div class="lcd-modal-actions">
+                            <button type="button" id="phone-change-confirm-btn" class="lcd-btn lcd-btn-primary">
+                                <?php _e('Continue & Save', 'lcd-people'); ?>
+                            </button>
+                            <button type="button" id="phone-change-cancel-btn" class="lcd-btn lcd-btn-secondary">
+                                <?php _e('Cancel', 'lcd-people'); ?>
+                            </button>
+                        </div>
                     </div>
-                </form>
+                </div>
+                
+                <!-- Phone Removal Warning Modal -->
+                <div id="phone-removal-warning" class="lcd-modal-overlay" style="display: none;">
+                    <div class="lcd-modal-content">
+                        <h4><?php _e('Phone Number Removal', 'lcd-people'); ?></h4>
+                        <p><?php _e('You are removing your phone number while still opted in to SMS messages. This will automatically opt you out of SMS messages.', 'lcd-people'); ?></p>
+                        <div class="lcd-modal-actions">
+                            <button type="button" id="phone-removal-confirm-btn" class="lcd-btn lcd-btn-primary">
+                                <?php _e('Remove & Opt Out', 'lcd-people'); ?>
+                            </button>
+                            <button type="button" id="phone-removal-cancel-btn" class="lcd-btn lcd-btn-secondary">
+                                <?php _e('Cancel', 'lcd-people'); ?>
+                            </button>
+                        </div>
+                    </div>
+                </div>
                 
                 <div id="subscription-success" class="lcd-success-message" style="display: none;">
                     <h4><?php _e('Success!', 'lcd-people'); ?></h4>

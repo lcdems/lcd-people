@@ -361,6 +361,78 @@ class LCD_People_Settings {
             'lcd_people_tracking_section'
         );
 
+        // CallHub SMS settings
+        register_setting('lcd_people_sender_settings', 'lcd_people_callhub_api_domain', array(
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => ''
+        ));
+
+        register_setting('lcd_people_sender_settings', 'lcd_people_callhub_api_key', array(
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => ''
+        ));
+
+        register_setting('lcd_people_sender_settings', 'lcd_people_callhub_sms_tags', array(
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => ''
+        ));
+
+        register_setting('lcd_people_sender_settings', 'lcd_people_callhub_dnc_list_name', array(
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => ''
+        ));
+
+        add_settings_section(
+            'lcd_people_callhub_section',
+            __('CallHub SMS Integration', 'lcd-people'),
+            array($this, 'render_callhub_settings_section'),
+            'lcd-people-sender-settings'
+        );
+
+        add_settings_field(
+            'lcd_people_callhub_api_domain',
+            __('API Domain', 'lcd-people'),
+            array($this, 'render_callhub_api_domain_field'),
+            'lcd-people-sender-settings',
+            'lcd_people_callhub_section'
+        );
+
+        add_settings_field(
+            'lcd_people_callhub_api_key',
+            __('API Key', 'lcd-people'),
+            array($this, 'render_callhub_api_key_field'),
+            'lcd-people-sender-settings',
+            'lcd_people_callhub_section'
+        );
+
+        add_settings_field(
+            'lcd_people_callhub_sms_tags',
+            __('SMS Opt-In Tag IDs', 'lcd-people'),
+            array($this, 'render_callhub_sms_tags_field'),
+            'lcd-people-sender-settings',
+            'lcd_people_callhub_section'
+        );
+
+        add_settings_field(
+            'lcd_people_callhub_dnc_list_name',
+            __('DNC List Name', 'lcd-people'),
+            array($this, 'render_callhub_dnc_list_name_field'),
+            'lcd-people-sender-settings',
+            'lcd_people_callhub_section'
+        );
+
+        add_settings_field(
+            'lcd_people_callhub_webhook_url',
+            __('Webhook URL', 'lcd-people'),
+            array($this, 'render_callhub_webhook_url_field'),
+            'lcd-people-sender-settings',
+            'lcd_people_callhub_section'
+        );
+
         // Forminator settings
         register_setting('lcd_people_forminator_settings', 'lcd_people_forminator_volunteer_form', array(
             'type' => 'string',
@@ -477,126 +549,149 @@ class LCD_People_Settings {
         // Migrate old settings to new format if needed
         $this->maybe_migrate_group_settings($assignments);
         
+        // Ensure all assignment types are arrays for the new format
+        $new_member_groups = $this->normalize_to_array($assignments['new_member'] ?? array());
+        $new_volunteer_groups = $this->normalize_to_array($assignments['new_volunteer'] ?? array());
+        $email_optin_groups = $this->normalize_to_array($assignments['email_optin'] ?? array());
+        $sms_optin_groups = $this->normalize_to_array($assignments['sms_optin'] ?? array());
+        
         ?>
         <div id="group-assignments-manager">
             <?php if (empty($available_groups)): ?>
                 <p class="notice notice-error inline"><?php _e('No groups found - check your API token and debug log', 'lcd-people'); ?></p>
             <?php else: ?>
                 <p class="description" style="margin-bottom: 15px;">
-                    <?php _e('Assign groups to different purposes. Each purpose can have different assignment rules.', 'lcd-people'); ?>
+                    <?php _e('Select which Sender.net groups to assign for each action. You can select multiple groups for each.', 'lcd-people'); ?>
                 </p>
                 
-                <table class="widefat group-assignments-table">
-                    <thead>
-                        <tr>
-                            <th style="width: 30%;"><?php _e('Group Name', 'lcd-people'); ?></th>
-                            <th style="width: 17%;"><?php _e('New Member', 'lcd-people'); ?><br><small><?php _e('(one only)', 'lcd-people'); ?></small></th>
-                            <th style="width: 17%;"><?php _e('New Volunteer', 'lcd-people'); ?><br><small><?php _e('(one only)', 'lcd-people'); ?></small></th>
-                            <th style="width: 18%;"><?php _e('Email Opt-in', 'lcd-people'); ?><br><small><?php _e('(auto-add)', 'lcd-people'); ?></small></th>
-                            <th style="width: 18%;"><?php _e('SMS Opt-in', 'lcd-people'); ?><br><small><?php _e('(auto-add)', 'lcd-people'); ?></small></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($available_groups as $group_id => $group_name): ?>
-                            <tr>
-                                <td>
-                                    <strong><?php echo esc_html($group_name); ?></strong><br>
-                                    <small class="group-id"><?php echo esc_html($group_id); ?></small>
-                                </td>
-                                <td class="assignment-cell">
-                                    <label>
-                                        <input type="radio" 
-                                               name="lcd_people_sender_group_assignments[new_member]" 
-                                               value="<?php echo esc_attr($group_id); ?>"
-                                               <?php checked($assignments['new_member'] ?? '', $group_id); ?>>
-                                        <?php _e('Assign', 'lcd-people'); ?>
-                                    </label>
-                                </td>
-                                <td class="assignment-cell">
-                                    <label>
-                                        <input type="radio" 
-                                               name="lcd_people_sender_group_assignments[new_volunteer]" 
-                                               value="<?php echo esc_attr($group_id); ?>"
-                                               <?php checked($assignments['new_volunteer'] ?? '', $group_id); ?>>
-                                        <?php _e('Assign', 'lcd-people'); ?>
-                                    </label>
-                                </td>
-                                <td class="assignment-cell">
-                                    <label>
-                                        <input type="checkbox" 
-                                               name="lcd_people_sender_group_assignments[email_optin][]" 
-                                               value="<?php echo esc_attr($group_id); ?>"
-                                               <?php checked(in_array($group_id, $assignments['email_optin'] ?? array())); ?>>
-                                        <?php _e('Auto-add', 'lcd-people'); ?>
-                                    </label>
-                                </td>
-                                <td class="assignment-cell">
-                                    <label>
-                                        <input type="checkbox" 
-                                               name="lcd_people_sender_group_assignments[sms_optin][]" 
-                                               value="<?php echo esc_attr($group_id); ?>"
-                                               <?php checked(in_array($group_id, $assignments['sms_optin'] ?? array())); ?>>
-                                        <?php _e('Auto-add', 'lcd-people'); ?>
-                                    </label>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
+                <table class="form-table group-assignments-form">
+                    <tr>
+                        <th scope="row">
+                            <label for="new_member_groups"><?php _e('New Member Groups', 'lcd-people'); ?></label>
+                        </th>
+                        <td>
+                            <select name="lcd_people_sender_group_assignments[new_member][]" 
+                                    id="new_member_groups" 
+                                    multiple="multiple" 
+                                    class="lcd-multi-select"
+                                    style="width: 100%; max-width: 400px;">
+                                <?php foreach ($available_groups as $group_id => $group_name): ?>
+                                    <option value="<?php echo esc_attr($group_id); ?>" 
+                                            <?php selected(in_array($group_id, $new_member_groups)); ?>>
+                                        <?php echo esc_html($group_name); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <p class="description"><?php _e('Assigned when someone becomes a new member (triggers welcome automation).', 'lcd-people'); ?></p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">
+                            <label for="new_volunteer_groups"><?php _e('New Volunteer Groups', 'lcd-people'); ?></label>
+                        </th>
+                        <td>
+                            <select name="lcd_people_sender_group_assignments[new_volunteer][]" 
+                                    id="new_volunteer_groups" 
+                                    multiple="multiple" 
+                                    class="lcd-multi-select"
+                                    style="width: 100%; max-width: 400px;">
+                                <?php foreach ($available_groups as $group_id => $group_name): ?>
+                                    <option value="<?php echo esc_attr($group_id); ?>" 
+                                            <?php selected(in_array($group_id, $new_volunteer_groups)); ?>>
+                                        <?php echo esc_html($group_name); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <p class="description"><?php _e('Assigned when someone signs up to volunteer.', 'lcd-people'); ?></p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">
+                            <label for="email_optin_groups"><?php _e('Email Opt-In Groups', 'lcd-people'); ?></label>
+                        </th>
+                        <td>
+                            <select name="lcd_people_sender_group_assignments[email_optin][]" 
+                                    id="email_optin_groups" 
+                                    multiple="multiple" 
+                                    class="lcd-multi-select"
+                                    style="width: 100%; max-width: 400px;">
+                                <?php foreach ($available_groups as $group_id => $group_name): ?>
+                                    <option value="<?php echo esc_attr($group_id); ?>" 
+                                            <?php selected(in_array($group_id, $email_optin_groups)); ?>>
+                                        <?php echo esc_html($group_name); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <p class="description"><?php _e('Automatically added to all email opt-in submissions (hidden from user).', 'lcd-people'); ?></p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">
+                            <label for="sms_optin_groups"><?php _e('SMS Opt-In Groups', 'lcd-people'); ?></label>
+                        </th>
+                        <td>
+                            <select name="lcd_people_sender_group_assignments[sms_optin][]" 
+                                    id="sms_optin_groups" 
+                                    multiple="multiple" 
+                                    class="lcd-multi-select"
+                                    style="width: 100%; max-width: 400px;">
+                                <?php foreach ($available_groups as $group_id => $group_name): ?>
+                                    <option value="<?php echo esc_attr($group_id); ?>" 
+                                            <?php selected(in_array($group_id, $sms_optin_groups)); ?>>
+                                        <?php echo esc_html($group_name); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <p class="description"><?php _e('Automatically added when user opts into SMS messages.', 'lcd-people'); ?></p>
+                        </td>
+                    </tr>
                 </table>
-                
-                <div class="group-assignments-help" style="margin-top: 20px;">
-                    <h4><?php _e('Assignment Types Explained:', 'lcd-people'); ?></h4>
-                    <ul>
-                        <li><strong><?php _e('New Member:', 'lcd-people'); ?></strong> <?php _e('Automatically assigned when someone becomes a new member (triggers welcome automation)', 'lcd-people'); ?></li>
-                        <li><strong><?php _e('New Volunteer:', 'lcd-people'); ?></strong> <?php _e('Automatically assigned when someone signs up to volunteer', 'lcd-people'); ?></li>
-                        <li><strong><?php _e('Email Opt-in:', 'lcd-people'); ?></strong> <?php _e('Automatically added to all email opt-in submissions (hidden from user)', 'lcd-people'); ?></li>
-                        <li><strong><?php _e('SMS Opt-in:', 'lcd-people'); ?></strong> <?php _e('Automatically added when user opts into SMS messages', 'lcd-people'); ?></li>
-                    </ul>
-                </div>
             <?php endif; ?>
         </div>
         
         <style>
-        .group-assignments-table th {
-            text-align: center;
-            padding: 12px 8px;
-            background: #f9f9f9;
+        .group-assignments-form th {
+            padding: 15px 10px 15px 0;
+            width: 200px;
         }
-        .group-assignments-table td {
-            padding: 12px 8px;
-            vertical-align: top;
+        .group-assignments-form td {
+            padding: 15px 10px;
         }
-        .assignment-cell {
-            text-align: center;
+        .lcd-multi-select {
+            min-height: 120px;
         }
-        .assignment-cell label {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            cursor: pointer;
-            font-size: 13px;
+        .lcd-multi-select option {
+            padding: 5px 8px;
         }
-        .assignment-cell input {
-            margin-bottom: 5px;
-        }
-        .group-id {
-            color: #666;
-            font-family: monospace;
-        }
-        .group-assignments-help ul {
-            margin-left: 20px;
-        }
-        .group-assignments-help li {
-            margin-bottom: 8px;
-            line-height: 1.4;
+        .lcd-multi-select option:checked {
+            background: linear-gradient(0deg, #2271b1 0%, #2271b1 100%);
+            color: white;
         }
         </style>
         
+        <p class="description" style="margin-top: 10px;">
+            <?php _e('Hold Ctrl (Windows) or Cmd (Mac) to select multiple groups.', 'lcd-people'); ?>
+        </p>
         <p class="description">
             <a href="<?php echo admin_url('edit.php?post_type=lcd_person&page=lcd-people-sender-settings&clear_cache=1'); ?>" onclick="return confirm('This will clear the groups cache and force a new API call. Continue?');">Clear Cache & Retry</a>
             | Check your WordPress debug log for detailed API information.
         </p>
         <?php
+    }
+    
+    /**
+     * Helper function to normalize a value to an array
+     * Handles migration from single string to array format
+     */
+    private function normalize_to_array($value) {
+        if (empty($value)) {
+            return array();
+        }
+        if (is_array($value)) {
+            return $value;
+        }
+        // Single string value - convert to array
+        return array($value);
     }
 
     public function render_optin_settings_section() {
@@ -908,6 +1003,218 @@ class LCD_People_Settings {
     }
 
     /**
+     * CallHub Settings Section and Fields
+     */
+    public function render_callhub_settings_section() {
+        ?>
+        <p><?php _e('Configure CallHub for SMS messaging. When users opt-in to SMS, they will be synced to CallHub as contacts. When they opt-out, they will be added to the Do Not Call (DNC) list.', 'lcd-people'); ?></p>
+        <p><?php _e('This integration ensures compliance by maintaining a single source of truth for SMS preferences across your preference center, Sender.net, and CallHub.', 'lcd-people'); ?></p>
+        <?php
+    }
+
+    public function render_callhub_api_domain_field() {
+        $value = get_option('lcd_people_callhub_api_domain', '');
+        ?>
+        <input type="text" name="lcd_people_callhub_api_domain" value="<?php echo esc_attr($value); ?>" class="regular-text" placeholder="api.callhub.io">
+        <p class="description">
+            <?php _e('Your CallHub API domain. Find it in CallHub under Settings > API Key (labeled "API Domain").', 'lcd-people'); ?>
+            <?php _e('Leave empty to use the default: api.callhub.io', 'lcd-people'); ?>
+        </p>
+        <?php
+    }
+
+    public function render_callhub_api_key_field() {
+        $value = get_option('lcd_people_callhub_api_key', '');
+        ?>
+        <div class="password-toggle-wrapper">
+            <input type="password" name="lcd_people_callhub_api_key" value="<?php echo esc_attr($value); ?>" class="regular-text">
+            <span class="dashicons dashicons-visibility toggle-password"></span>
+        </div>
+        <p class="description">
+            <?php _e('Your CallHub API key. Find it in CallHub under Settings > API Key.', 'lcd-people'); ?>
+            <a href="https://developer.callhub.io/" target="_blank"><?php _e('API Documentation', 'lcd-people'); ?></a>
+        </p>
+        <?php
+        // Test connection if API key is set
+        if (!empty($value)) {
+            $this->render_callhub_connection_test();
+        }
+    }
+
+    public function render_callhub_sms_tags_field() {
+        $value = get_option('lcd_people_callhub_sms_tags', '');
+        ?>
+        <input type="text" name="lcd_people_callhub_sms_tags" value="<?php echo esc_attr($value); ?>" class="regular-text" placeholder="e.g., 12345, 67890">
+        <p class="description">
+            <?php _e('Enter tag IDs to assign to contacts when they opt-in to SMS. Separate multiple IDs with commas.', 'lcd-people'); ?>
+            <br><?php _e('Find tag IDs in CallHub under Settings > Tags - the ID is shown in the tag details or URL.', 'lcd-people'); ?>
+        </p>
+        <?php
+    }
+
+    public function render_callhub_dnc_list_name_field() {
+        $value = get_option('lcd_people_callhub_dnc_list_name', '');
+        ?>
+        <input type="text" name="lcd_people_callhub_dnc_list_name" value="<?php echo esc_attr($value); ?>" class="regular-text" placeholder="e.g., SMS Opt-Out List">
+        <p class="description">
+            <?php _e('The exact name of your CallHub DNC (Do Not Call) list. This must match the list name in CallHub exactly.', 'lcd-people'); ?>
+            <br><?php _e('When users opt out of SMS, their phone numbers will be added to this list.', 'lcd-people'); ?>
+        </p>
+        <?php
+    }
+
+    public function render_callhub_webhook_url_field() {
+        $webhook_url = rest_url('lcd-people/v1/callhub-webhook');
+        $api_key = get_option('lcd_people_callhub_api_key', '');
+        ?>
+        <div style="background: #f0f0f1; padding: 10px; border-left: 4px solid #72aee6; margin-bottom: 10px;">
+            <code style="background: white; padding: 5px; display: block; user-select: all;"><?php echo esc_url($webhook_url); ?></code>
+        </div>
+        
+        <?php if (!empty($api_key)): ?>
+            <?php $this->render_callhub_webhook_status(); ?>
+        <?php else: ?>
+            <p class="description" style="color: #d63638;">
+                <?php _e('Enter your API key above and save settings to enable webhook registration.', 'lcd-people'); ?>
+            </p>
+        <?php endif; ?>
+        
+        <p class="description" style="margin-top: 15px;">
+            <strong><?php _e('How it works:', 'lcd-people'); ?></strong> <?php _e('When a user texts STOP to your CallHub number, CallHub will notify this webhook, which automatically:', 'lcd-people'); ?>
+        </p>
+        <ul style="margin-left: 20px; list-style-type: disc;">
+            <li><?php _e('Updates the user\'s SMS preferences in your database', 'lcd-people'); ?></li>
+            <li><?php _e('Removes their phone number from Sender.net', 'lcd-people'); ?></li>
+            <li><?php _e('Ensures they\'re on the CallHub DNC list', 'lcd-people'); ?></li>
+        </ul>
+        <?php
+    }
+    
+    /**
+     * Render webhook status and registration button
+     */
+    private function render_callhub_webhook_status() {
+        if (!class_exists('LCD_People_CallHub_Handler')) {
+            return;
+        }
+        
+        $handler = new LCD_People_CallHub_Handler($this->main_plugin);
+        $status = $handler->get_webhook_status();
+        
+        ?>
+        <div id="callhub-webhook-status" style="margin: 15px 0; padding: 10px; background: <?php echo $status['registered'] ? '#d1e7dd' : '#fff3cd'; ?>; border-left: 4px solid <?php echo $status['registered'] ? '#198754' : '#ffc107'; ?>;">
+            <p style="margin: 0 0 10px 0;">
+                <strong><?php _e('Webhook Status:', 'lcd-people'); ?></strong>
+                <?php if ($status['registered']): ?>
+                    <span style="color: #198754;">
+                        <span class="dashicons dashicons-yes-alt"></span>
+                        <?php echo esc_html($status['message']); ?>
+                    </span>
+                <?php else: ?>
+                    <span style="color: #856404;">
+                        <span class="dashicons dashicons-warning"></span>
+                        <?php echo esc_html($status['message']); ?>
+                    </span>
+                <?php endif; ?>
+            </p>
+            
+            <?php if ($status['registered'] && !empty($status['webhooks'])): ?>
+                <details style="margin-bottom: 10px;">
+                    <summary style="cursor: pointer; color: #666;"><?php _e('Show registered webhooks', 'lcd-people'); ?></summary>
+                    <ul style="margin: 10px 0 0 20px; font-size: 12px;">
+                        <?php foreach ($status['webhooks'] as $webhook): ?>
+                            <li>
+                                <strong><?php echo esc_html($webhook['event'] ?? 'unknown'); ?></strong>
+                                <?php if (isset($webhook['id'])): ?>
+                                    <span style="color: #999;">(ID: <?php echo esc_html($webhook['id']); ?>)</span>
+                                <?php endif; ?>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                </details>
+            <?php endif; ?>
+            
+            <button type="button" id="register-callhub-webhook" class="button <?php echo $status['registered'] ? 'button-secondary' : 'button-primary'; ?>">
+                <?php echo $status['registered'] ? __('Re-register Webhooks', 'lcd-people') : __('Register Webhooks Now', 'lcd-people'); ?>
+            </button>
+            <span id="webhook-register-spinner" class="spinner" style="float: none; margin-left: 5px;"></span>
+            <span id="webhook-register-result" style="margin-left: 10px;"></span>
+        </div>
+        
+        <script type="text/javascript">
+        jQuery(document).ready(function($) {
+            $('#register-callhub-webhook').on('click', function() {
+                var $button = $(this);
+                var $spinner = $('#webhook-register-spinner');
+                var $result = $('#webhook-register-result');
+                
+                $button.prop('disabled', true);
+                $spinner.addClass('is-active');
+                $result.html('');
+                
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'lcd_register_callhub_webhook',
+                        nonce: '<?php echo wp_create_nonce('lcd_callhub_webhook'); ?>'
+                    },
+                    success: function(response) {
+                        $spinner.removeClass('is-active');
+                        $button.prop('disabled', false);
+                        
+                        if (response.success) {
+                            $result.html('<span style="color: #198754;">' + response.data.message + '</span>');
+                            // Reload after 2 seconds to show updated status
+                            setTimeout(function() {
+                                location.reload();
+                            }, 2000);
+                        } else {
+                            $result.html('<span style="color: #dc3545;">' + (response.data.message || 'Error registering webhook') + '</span>');
+                        }
+                    },
+                    error: function() {
+                        $spinner.removeClass('is-active');
+                        $button.prop('disabled', false);
+                        $result.html('<span style="color: #dc3545;"><?php _e('Network error. Please try again.', 'lcd-people'); ?></span>');
+                    }
+                });
+            });
+        });
+        </script>
+        <?php
+    }
+
+    /**
+     * Render CallHub connection test result
+     */
+    private function render_callhub_connection_test() {
+        // Only test if we have the handler available
+        if (!class_exists('LCD_People_CallHub_Handler')) {
+            return;
+        }
+        
+        $handler = new LCD_People_CallHub_Handler($this->main_plugin);
+        $result = $handler->test_connection();
+        
+        if ($result['success']) {
+            ?>
+            <p style="color: #00a32a; margin-top: 5px;">
+                <span class="dashicons dashicons-yes-alt"></span>
+                <?php echo esc_html($result['message']); ?>
+            </p>
+            <?php
+        } else {
+            ?>
+            <p style="color: #d63638; margin-top: 5px;">
+                <span class="dashicons dashicons-warning"></span>
+                <?php echo esc_html($result['message']); ?>
+            </p>
+            <?php
+        }
+    }
+
+    /**
      * Maybe migrate old group settings to new format
      */
     private function maybe_migrate_group_settings(&$assignments) {
@@ -952,16 +1259,15 @@ class LCD_People_Settings {
         
         $sanitized = array();
         
-        // Sanitize single-select fields (radio buttons)
-        if (isset($assignments['new_member'])) {
-            $sanitized['new_member'] = sanitize_text_field($assignments['new_member']);
+        // All fields are now multi-select arrays
+        if (isset($assignments['new_member']) && is_array($assignments['new_member'])) {
+            $sanitized['new_member'] = array_map('sanitize_text_field', $assignments['new_member']);
         }
         
-        if (isset($assignments['new_volunteer'])) {
-            $sanitized['new_volunteer'] = sanitize_text_field($assignments['new_volunteer']);
+        if (isset($assignments['new_volunteer']) && is_array($assignments['new_volunteer'])) {
+            $sanitized['new_volunteer'] = array_map('sanitize_text_field', $assignments['new_volunteer']);
         }
         
-        // Sanitize multi-select fields (checkboxes)
         if (isset($assignments['email_optin']) && is_array($assignments['email_optin'])) {
             $sanitized['email_optin'] = array_map('sanitize_text_field', $assignments['email_optin']);
         }
@@ -1282,10 +1588,10 @@ class LCD_People_Settings {
             return;
         }
         
-        // Handle cache clearing
+        // Handle cache clearing for Sender.net
         if (isset($_GET['clear_cache']) && $_GET['clear_cache'] == '1') {
             delete_transient('lcd_people_sender_groups');
-            add_settings_error('lcd_people_sender_settings', 'cache_cleared', __('Groups cache cleared. The API will be called again.', 'lcd-people'), 'updated');
+            add_settings_error('lcd_people_sender_settings', 'cache_cleared', __('Sender.net groups cache cleared. The API will be called again.', 'lcd-people'), 'updated');
         }
         
         ?>

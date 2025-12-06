@@ -18,6 +18,7 @@ require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-frontend.php
 require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-settings.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-actblue-handler.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-sender-handler.php';
+require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-callhub-handler.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-optin-handler.php';
 require_once plugin_dir_path(__FILE__) . 'admin/class-people-email-admin.php';
 
@@ -26,6 +27,7 @@ class LCD_People {
     private $settings;
     private $actblue_handler;
     private $sender_handler;
+    private $callhub_handler;
     private $optin_handler;
     private $email_admin;
     const USER_META_KEY = '_lcd_person_id';
@@ -46,6 +48,9 @@ class LCD_People {
         
         // Initialize Sender.net handler
         $this->sender_handler = new LCD_People_Sender_Handler($this);
+        
+        // Initialize CallHub handler (for SMS)
+        $this->callhub_handler = new LCD_People_CallHub_Handler($this);
         
         // Initialize Opt-in handler
         $this->optin_handler = new LCD_People_Optin_Handler($this);
@@ -122,6 +127,9 @@ class LCD_People {
 
         // Add Sync All to Sender AJAX handler
         add_action('wp_ajax_lcd_sync_all_to_sender', array($this, 'ajax_sync_all_to_sender'));
+
+        // Add CallHub webhook registration AJAX handler
+        add_action('wp_ajax_lcd_register_callhub_webhook', array($this, 'ajax_register_callhub_webhook'));
 
         // Remove default date filter and add custom filters
         add_filter('disable_months_dropdown', array($this, 'disable_months_dropdown'), 10, 2);
@@ -2245,6 +2253,38 @@ class LCD_People {
             'message' => $message,
             'results' => $results
         ));
+    }
+
+    /**
+     * AJAX handler to register CallHub webhook
+     */
+    public function ajax_register_callhub_webhook() {
+        // Security checks
+        check_ajax_referer('lcd_callhub_webhook', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => __('Permission denied.', 'lcd-people')), 403);
+        }
+
+        // Check if CallHub handler is available
+        if (!$this->callhub_handler) {
+            wp_send_json_error(array('message' => __('CallHub handler not initialized.', 'lcd-people')));
+        }
+
+        // Register the webhook
+        $result = $this->callhub_handler->register_sms_webhook();
+
+        if ($result['success']) {
+            wp_send_json_success(array(
+                'message' => $result['message'],
+                'details' => $result['details'] ?? array()
+            ));
+        } else {
+            wp_send_json_error(array(
+                'message' => $result['message'],
+                'details' => $result['details'] ?? array()
+            ));
+        }
     }
 
     /**

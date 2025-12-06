@@ -61,6 +61,10 @@ class LCD_People_Optin_Handler {
         add_action('wp_ajax_lcd_get_subscription_preferences', array($this, 'ajax_get_subscription_preferences'));
         add_action('wp_ajax_lcd_update_subscription_preferences', array($this, 'ajax_update_subscription_preferences'));
         add_action('wp_ajax_lcd_unsubscribe_from_all', array($this, 'ajax_unsubscribe_from_all'));
+        
+        // SMS opt-in/opt-out AJAX handlers
+        add_action('wp_ajax_lcd_sms_optin', array($this, 'ajax_sms_optin'));
+        add_action('wp_ajax_lcd_sms_optout', array($this, 'ajax_sms_optout'));
     }
     
     /**
@@ -416,6 +420,9 @@ class LCD_People_Optin_Handler {
         $body = json_decode(wp_remote_retrieve_body($response), true);
         
         if ($status === 200 || $status === 201) {
+            // Also sync to CallHub (SMS opted in)
+            $this->sync_to_callhub($phone, $first_name, $last_name, $email, true);
+            
             return array(
                 'success' => true,
                 'message' => __('SMS preferences updated successfully!', 'lcd-people')
@@ -501,6 +508,11 @@ class LCD_People_Optin_Handler {
         $body = json_decode(wp_remote_retrieve_body($response), true);
         
         if ($status === 200 || $status === 201) {
+            // Also sync to CallHub if phone was provided (SMS opt-in)
+            if (!empty($phone)) {
+                $this->sync_to_callhub($phone, $first_name, $last_name, $email, true);
+            }
+            
             return array(
                 'success' => true,
                 'message' => __('Successfully subscribed!', 'lcd-people')
@@ -514,6 +526,46 @@ class LCD_People_Optin_Handler {
                 'message' => isset($body['message']) ? $body['message'] : __('Subscription failed. Please try again.', 'lcd-people')
             );
         }
+    }
+    
+    /**
+     * Sync SMS status to CallHub
+     * 
+     * @param string $phone Phone number
+     * @param string $first_name First name
+     * @param string $last_name Last name
+     * @param string $email Email address
+     * @param bool $sms_opted_in Whether user has opted in to SMS
+     * @return array Result with success status and message
+     */
+    private function sync_to_callhub($phone, $first_name, $last_name, $email, $sms_opted_in) {
+        // Check if CallHub is configured
+        $api_key = get_option('lcd_people_callhub_api_key', '');
+        if (empty($api_key)) {
+            // CallHub not configured, skip silently
+            return array(
+                'success' => true,
+                'message' => __('CallHub not configured, skipping.', 'lcd-people')
+            );
+        }
+        
+        // Get the CallHub handler
+        if (!class_exists('LCD_People_CallHub_Handler')) {
+            return array(
+                'success' => false,
+                'message' => __('CallHub handler not available.', 'lcd-people')
+            );
+        }
+        
+        $callhub_handler = new LCD_People_CallHub_Handler($this->main_plugin);
+        $result = $callhub_handler->sync_sms_status($phone, $first_name, $last_name, $email, $sms_opted_in);
+        
+        // Log the result
+        if (!$result['success']) {
+            error_log('LCD People: CallHub sync failed - ' . $result['message']);
+        }
+        
+        return $result;
     }
     
     /**
@@ -836,6 +888,20 @@ class LCD_People_Optin_Handler {
             }
         }
         
+        // Check if user is in any SMS opt-in groups
+        $group_assignments = get_option('lcd_people_sender_group_assignments', array());
+        $sms_optin_groups = $group_assignments['sms_optin'] ?? array();
+        $sms_opted_in = false;
+        
+        if (!empty($sms_optin_groups) && !empty($user_groups)) {
+            foreach ($sms_optin_groups as $sms_group_id) {
+                if (in_array($sms_group_id, $user_groups)) {
+                    $sms_opted_in = true;
+                    break;
+                }
+            }
+        }
+        
         return array(
             'success' => true,
             'data' => array(
@@ -846,7 +912,8 @@ class LCD_People_Optin_Handler {
                 'is_active' => isset($subscriber_data['status']['email']) ? ($subscriber_data['status']['email'] === 'active') : true,
                 'user_groups' => $user_groups,
                 'available_groups' => $available_groups,
-                'subscriber_id' => $subscriber_data['id'] ?? null // Add subscriber ID for phone removal
+                'subscriber_id' => $subscriber_data['id'] ?? null,
+                'sms_opted_in' => $sms_opted_in // Explicit SMS opt-in status based on group membership
             )
         );
     }
@@ -926,6 +993,21 @@ class LCD_People_Optin_Handler {
         $update_result = $this->update_subscriber_info($email, $first_name, $last_name, $phone_to_update, $token, $subscriber_id);
         if (!$update_result['success']) {
             $errors[] = sprintf(__('Failed to update contact info: %s', 'lcd-people'), $update_result['message']);
+        }
+        
+        // Sync SMS status to CallHub
+        // If phone is provided, user has opted IN to SMS
+        // If phone is null/empty, user has opted OUT of SMS
+        $current_phone = $current_prefs['data']['phone'] ?? '';
+        $sms_opted_in = !empty($phone_to_update);
+        
+        // Only sync to CallHub if there's a phone number involved (either adding or removing)
+        if (!empty($phone_to_update) || !empty($current_phone)) {
+            $phone_for_callhub = !empty($phone_to_update) ? $phone_to_update : $current_phone;
+            $callhub_result = $this->sync_to_callhub($phone_for_callhub, $first_name, $last_name, $email, $sms_opted_in);
+            if (!$callhub_result['success'] && strpos($callhub_result['message'], 'not configured') === false) {
+                $errors[] = sprintf(__('CallHub sync: %s', 'lcd-people'), $callhub_result['message']);
+            }
         }
         
         if (empty($errors)) {
@@ -1103,6 +1185,109 @@ class LCD_People_Optin_Handler {
                 'success' => false, 
                 'message' => isset($response_data['message']) ? $response_data['message'] : "HTTP {$status}"
             );
+        }
+    }
+    
+    /**
+     * Handle SMS opt-in via AJAX
+     */
+    public function ajax_sms_optin() {
+        check_ajax_referer('lcd_subscription_nonce', 'nonce');
+        
+        if (!is_user_logged_in()) {
+            wp_send_json_error(array('message' => __('You must be logged in to opt in to SMS.', 'lcd-people')));
+        }
+        
+        $user = wp_get_current_user();
+        $phone = sanitize_text_field($_POST['phone'] ?? '');
+        
+        if (empty($phone)) {
+            wp_send_json_error(array('message' => __('Phone number is required to opt in to SMS.', 'lcd-people')));
+        }
+        
+        // Format phone number
+        $phone = $this->format_phone_number($phone);
+        
+        // Get current user's subscription preferences to get name
+        $prefs = $this->get_user_subscription_preferences($user->user_email);
+        
+        if (!$prefs['success']) {
+            wp_send_json_error(array('message' => __('Unable to retrieve your subscription information.', 'lcd-people')));
+        }
+        
+        $first_name = $prefs['data']['first_name'] ?? '';
+        $last_name = $prefs['data']['last_name'] ?? '';
+        
+        // Update user with SMS info (adds SMS groups and phone number to Sender.net)
+        $result = $this->update_user_sms_preferences(
+            $user->user_email,
+            $first_name,
+            $last_name,
+            $phone
+        );
+        
+        if ($result['success']) {
+            wp_send_json_success(array('message' => __('You have successfully opted in to SMS messages!', 'lcd-people')));
+        } else {
+            wp_send_json_error(array('message' => $result['message']));
+        }
+    }
+    
+    /**
+     * Handle SMS opt-out via AJAX
+     */
+    public function ajax_sms_optout() {
+        check_ajax_referer('lcd_subscription_nonce', 'nonce');
+        
+        if (!is_user_logged_in()) {
+            wp_send_json_error(array('message' => __('You must be logged in to opt out of SMS.', 'lcd-people')));
+        }
+        
+        $user = wp_get_current_user();
+        
+        // Get current user's subscription preferences
+        $prefs = $this->get_user_subscription_preferences($user->user_email);
+        
+        if (!$prefs['success']) {
+            wp_send_json_error(array('message' => __('Unable to retrieve your subscription information.', 'lcd-people')));
+        }
+        
+        $current_phone = $prefs['data']['phone'] ?? '';
+        $first_name = $prefs['data']['first_name'] ?? '';
+        $last_name = $prefs['data']['last_name'] ?? '';
+        $subscriber_id = $prefs['data']['subscriber_id'] ?? null;
+        
+        $token = get_option('lcd_people_sender_token');
+        $errors = array();
+        
+        // Note: We do NOT remove the phone from Sender.net/WordPress - it's used for other purposes
+        // We only remove from SMS groups and add to CallHub DNC
+        
+        // 1. Remove user from SMS groups in Sender.net
+        $group_assignments = get_option('lcd_people_sender_group_assignments', array());
+        $sms_groups = $group_assignments['sms_optin'] ?? array();
+        
+        foreach ($sms_groups as $group_id) {
+            $result = $this->remove_subscriber_from_group($user->user_email, $group_id, $token);
+            if (!$result['success']) {
+                error_log('LCD People: Failed to remove from SMS group ' . $group_id . ': ' . $result['message']);
+            }
+        }
+        
+        // 2. Sync to CallHub (opt-out) - adds to DNC list
+        if (!empty($current_phone)) {
+            $callhub_result = $this->sync_to_callhub($current_phone, $first_name, $last_name, $user->user_email, false);
+            if (!$callhub_result['success'] && strpos($callhub_result['message'], 'not configured') === false) {
+                $errors[] = sprintf(__('CallHub sync: %s', 'lcd-people'), $callhub_result['message']);
+            }
+        }
+        
+        if (empty($errors)) {
+            wp_send_json_success(array('message' => __('You have been opted out of SMS messages.', 'lcd-people')));
+        } else {
+            // Even with errors, the main action succeeded - just log them
+            error_log('LCD People SMS Opt-out errors: ' . implode('; ', $errors));
+            wp_send_json_success(array('message' => __('You have been opted out of SMS messages.', 'lcd-people')));
         }
     }
     
