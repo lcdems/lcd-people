@@ -9,16 +9,8 @@
 
     // Main opt-in form functionality
     window.lcdOptinForm = {
-        currentStep: 'email',
-        sessionKey: null,
         
         init: function() {
-            // Check if we're showing SMS step directly (for compliance review)
-            var container = $('#lcd-optin-form');
-            if (container.data('force-step') === 'sms') {
-                this.currentStep = 'sms';
-            }
-            
             this.bindEvents();
             this.initTracking();
         },
@@ -37,64 +29,21 @@
         bindEvents: function() {
             var self = this;
             
-            // Email form submission
-            $(document).on('submit', '#lcd-optin-email-form', function(e) {
-                e.preventDefault();
-                self.submitEmailStep();
-            });
-            
             // Combined form submission
             $(document).on('submit', '#lcd-optin-combined-form', function(e) {
                 e.preventDefault();
                 self.submitCombinedForm();
             });
             
-            // SMS form submission
-            $(document).on('submit', '#lcd-optin-sms-form', function(e) {
-                e.preventDefault();
-                self.submitFinalStep(true);
-            });
-            
-            // Skip SMS button
-            $(document).on('click', '#lcd-skip-sms-btn', function(e) {
-                e.preventDefault();
-                self.submitFinalStep(false);
-            });
-            
-            // SMS consent checkbox
-            $(document).on('change', '#lcd-optin-sms-consent', function() {
-                this.updateSMSButtonState();
-            }.bind(this));
-            
-            // Main consent checkbox on SMS step
-            $(document).on('change', '#lcd-optin-main-consent-sms', function() {
-                this.updateSMSButtonState();
-            }.bind(this));
-            
             // Combined form field validation
             $(document).on('input change', '#lcd-optin-combined-form input', function() {
-                this.updateCombinedButtonState();
-            }.bind(this));
+                self.updateCombinedButtonState();
+            });
             
             // Show/hide SMS consent based on phone input in combined form
             $(document).on('input', '#lcd-optin-phone-combined', function() {
-                this.updateCombinedSMSVisibility();
-            }.bind(this));
-        },
-        
-        updateSMSButtonState: function() {
-            var smsConsentGiven = $('#lcd-optin-sms-consent').is(':checked');
-            var mainConsentGiven = $('#lcd-optin-main-consent-sms').is(':checked');
-            var phoneField = $('#lcd-optin-phone');
-            var submitBtn = $('#lcd-sms-optin-btn');
-            
-            if (smsConsentGiven && mainConsentGiven) {
-                phoneField.prop('required', true);
-                submitBtn.prop('disabled', false);
-            } else {
-                phoneField.prop('required', false);
-                submitBtn.prop('disabled', true);
-            }
+                self.updateCombinedSMSVisibility();
+            });
         },
         
         updateCombinedButtonState: function() {
@@ -134,58 +83,6 @@
             this.updateCombinedButtonState();
         },
         
-        submitEmailStep: function() {
-            // Validate main consent checkbox if present
-            var mainConsentCheckbox = $('#lcd-optin-main-consent');
-            if (mainConsentCheckbox.length && !mainConsentCheckbox.is(':checked')) {
-                this.showError(lcdOptinVars.strings.required_consent || 'Please accept the terms and conditions.');
-                return;
-            }
-            
-            var formData = {
-                action: 'lcd_optin_submit_email',
-                nonce: lcdOptinVars.nonce,
-                first_name: $('#lcd-optin-first-name').val(),
-                last_name: $('#lcd-optin-last-name').val(),
-                email: $('#lcd-optin-email').val(),
-                groups: [],
-                main_consent: mainConsentCheckbox.is(':checked') ? 1 : 0
-            };
-            
-            // Get selected groups
-            $('input[name="groups[]"]:checked').each(function() {
-                formData.groups.push($(this).val());
-            });
-            
-            // Auto-select the first group if none are selected but groups are available
-            if (formData.groups.length === 0) {
-                var firstGroup = $('input[name="groups[]"]').first();
-                if (firstGroup.length) {
-                    firstGroup.prop('checked', true);
-                    formData.groups.push(firstGroup.val());
-                }
-            }
-            // Note: Empty groups array is OK - form will use auto-add groups from settings
-            
-            this.showLoading();
-            
-            var self = this;
-            $.post(lcdOptinVars.ajaxurl, formData)
-                .done(function(response) {
-                    if (response.success) {
-                        self.sessionKey = response.data.session_key;
-                        // Fire email conversion tracking since user is now signed up
-                        self.fireEmailConversionTracking();
-                        self.showStep('sms');
-                    } else {
-                        self.showError(response.data.message || lcdOptinVars.strings.error);
-                    }
-                })
-                .fail(function() {
-                    self.showError(lcdOptinVars.strings.error);
-                });
-        },
-        
         submitCombinedForm: function() {
             // Validate main consent checkbox if present
             var mainConsentCheckbox = $('#lcd-optin-main-consent-combined');
@@ -212,7 +109,9 @@
                 phone: phone,
                 groups: [],
                 sms_consent: smsConsent ? 1 : 0,
-                main_consent: mainConsentCheckbox.length ? (mainConsentCheckbox.is(':checked') ? 1 : 0) : 1
+                main_consent: mainConsentCheckbox.length ? (mainConsentCheckbox.is(':checked') ? 1 : 0) : 1,
+                extra_sender_groups: $('input[name="extra_sender_groups"]').val() || '',
+                extra_callhub_tags: $('input[name="extra_callhub_tags"]').val() || ''
             };
             
             // Get selected groups
@@ -252,62 +151,10 @@
                 });
         },
         
-        submitFinalStep: function(includeSMS) {
-            // Validate main consent checkbox on SMS step
-            var mainConsentCheckbox = $('#lcd-optin-main-consent-sms');
-            if (mainConsentCheckbox.length && !mainConsentCheckbox.is(':checked')) {
-                this.showError(lcdOptinVars.strings.required_consent || 'Please accept the terms and conditions.');
-                return;
-            }
-            
-            var formData = {
-                action: 'lcd_optin_submit_final',
-                nonce: lcdOptinVars.nonce,
-                session_key: this.sessionKey,
-                main_consent: mainConsentCheckbox.is(':checked') ? 1 : 0
-            };
-            
-            if (includeSMS) {
-                formData.phone = $('#lcd-optin-phone').val();
-                formData.sms_consent = $('#lcd-optin-sms-consent').is(':checked') ? 1 : 0;
-                
-                // Validate SMS consent is checked
-                if (!formData.sms_consent) {
-                    this.showError('Please check the SMS consent checkbox to continue.');
-                    return;
-                }
-            }
-            
-            this.showLoading();
-            
-            var self = this;
-            $.post(lcdOptinVars.ajaxurl, formData)
-                .done(function(response) {
-                    if (response.success) {
-                        // Only fire SMS tracking if user opted in for SMS
-                        if (includeSMS) {
-                            self.fireSMSConversionTracking();
-                        }
-                        self.showSuccess(response.data.message);
-                    } else {
-                        // Check if this needs redirect to main form
-                        if (response.data && response.data.needs_redirect) {
-                            self.showRedirectError(response.data.message);
-                        } else {
-                            self.showError(response.data.message || lcdOptinVars.strings.error);
-                        }
-                    }
-                })
-                .fail(function() {
-                    self.showError(lcdOptinVars.strings.error);
-                });
-        },
-        
         showStep: function(step) {
             $('.lcd-optin-step').hide();
             $('#lcd-optin-step-' + step).show();
             $('#lcd-optin-loading').hide();
-            this.currentStep = step;
         },
         
         showLoading: function() {
@@ -335,24 +182,9 @@
             $('#lcd-optin-error').show();
         },
         
-        showRedirectError: function(message) {
-            // Show error with link back to main form
-            $('.lcd-optin-step').hide();
-            $('#lcd-optin-loading').hide();
-            
-            // Get current URL without query params
-            var baseUrl = window.location.href.split('?')[0];
-            
-            var errorDiv = $('#lcd-optin-error');
-            errorDiv.find('.error-message').html(
-                message + '<br><br><a href="' + baseUrl + '" class="lcd-btn lcd-btn-primary">Start Sign-Up Process</a>'
-            );
-            errorDiv.show();
-        },
-        
         hideError: function() {
             $('#lcd-optin-error').hide();
-            this.showStep(this.currentStep);
+            this.showStep('combined');
         },
         
         fireEmailConversionTracking: function() {
@@ -388,31 +220,6 @@
             this.fireFacebookEvent('Subscribe', {
                 content_name: 'SMS Opt-in',
                 content_category: 'SMS Subscription'
-            });
-        },
-        
-        fireFinalConversionTracking: function(includedSMS) {
-            var conversionValue = lcdOptinVars.tracking.conversion_value;
-            var eventLabel = includedSMS ? 'email_sms_conversion' : 'email_only_conversion';
-            var contentName = includedSMS ? 'Email + SMS Signup' : 'Email Signup';
-            
-            // Fire Google Analytics conversion
-            this.fireGoogleEvent('conversion', {
-                event_category: 'engagement',
-                event_label: eventLabel,
-                value: conversionValue
-            });
-            
-            // Fire Google Ads conversion if configured
-            if (lcdOptinVars.tracking.google_conversion_label) {
-                this.fireGoogleAdsConversion(conversionValue);
-            }
-            
-            // Fire Facebook conversion
-            this.fireFacebookEvent('CompleteRegistration', {
-                content_name: contentName,
-                content_category: 'Newsletter Signup',
-                value: conversionValue
             });
         },
         
@@ -513,4 +320,4 @@
         }
     });
 
-})(jQuery); 
+})(jQuery);

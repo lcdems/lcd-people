@@ -1616,6 +1616,15 @@ class LCD_People_Settings {
                     <li><strong><?php _e('Modal Trigger:', 'lcd-people'); ?></strong> <code>&lt;button data-modal="optin-form"&gt;Join Our List&lt;/button&gt;</code> - <?php _e('Open the form in a modal', 'lcd-people'); ?></li>
                     <li><strong><?php _e('JavaScript:', 'lcd-people'); ?></strong> <code>LCDModal.open({type: 'optin-form'})</code> - <?php _e('Trigger programmatically', 'lcd-people'); ?></li>
                 </ul>
+                
+                <h4><?php _e('Shortcode Parameters', 'lcd-people'); ?></h4>
+                <p><?php _e('You can add extra groups/tags on a per-shortcode basis using these optional parameters:', 'lcd-people'); ?></p>
+                <ul>
+                    <li><code>sender_groups</code> - <?php _e('Comma-separated Sender.net group IDs to add', 'lcd-people'); ?></li>
+                    <li><code>callhub_tags</code> - <?php _e('Comma-separated CallHub tag IDs to add', 'lcd-people'); ?></li>
+                </ul>
+                <p><strong><?php _e('Example:', 'lcd-people'); ?></strong> <code>[lcd_optin_form sender_groups="abc123,def456" callhub_tags="tag1,tag2"]</code></p>
+                
                 <p class="description"><?php _e('The form will display groups in the order configured above, with default selections pre-checked. Email and SMS auto-add groups will be automatically assigned based on user selections. All opt-ins will trigger welcome automations.', 'lcd-people'); ?></p>
                 
                 <?php if (get_option('lcd_people_optin_google_gtag_id') || get_option('lcd_people_optin_facebook_pixel_id')): ?>
@@ -1623,8 +1632,8 @@ class LCD_People_Settings {
                     <h4 style="margin-top: 0;"><?php _e('Conversion Tracking Active', 'lcd-people'); ?></h4>
                     <p style="margin-bottom: 0;"><?php _e('Conversion events will be automatically fired when users complete the opt-in process:', 'lcd-people'); ?></p>
                     <ul style="margin: 10px 0 0 20px;">
-                        <li><strong><?php _e('Email Step:', 'lcd-people'); ?></strong> <?php _e('Lead generation events (Google: generate_lead, Facebook: Lead)', 'lcd-people'); ?></li>
-                        <li><strong><?php _e('Final Success:', 'lcd-people'); ?></strong> <?php _e('Conversion events (Google: conversion, Facebook: CompleteRegistration)', 'lcd-people'); ?></li>
+                        <li><strong><?php _e('Email Signup:', 'lcd-people'); ?></strong> <?php _e('Conversion events (Google: conversion, Facebook: CompleteRegistration)', 'lcd-people'); ?></li>
+                        <li><strong><?php _e('SMS Opt-in:', 'lcd-people'); ?></strong> <?php _e('Subscribe events (Google: conversion, Facebook: Subscribe)', 'lcd-people'); ?></li>
                         <?php if (get_option('lcd_people_optin_google_conversion_label')): ?>
                         <li><strong><?php _e('Google Ads:', 'lcd-people'); ?></strong> <?php _e('Conversion action will be fired with configured label', 'lcd-people'); ?></li>
                         <?php endif; ?>

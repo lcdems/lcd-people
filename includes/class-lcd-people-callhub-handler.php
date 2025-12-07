@@ -840,9 +840,10 @@ class LCD_People_CallHub_Handler {
      * @param string $last_name Last name
      * @param string $email Email address
      * @param bool $sms_opted_in Whether user has opted in to SMS
+     * @param array $extra_tags Additional CallHub tag IDs from shortcode
      * @return array Result with success status and message
      */
-    public function sync_sms_status($phone, $first_name, $last_name, $email, $sms_opted_in) {
+    public function sync_sms_status($phone, $first_name, $last_name, $email, $sms_opted_in, $extra_tags = array()) {
         $api_key = $this->get_api_key();
         
         if (empty($api_key)) {
@@ -869,6 +870,12 @@ class LCD_People_CallHub_Handler {
             
             // Get SMS opt-in tag IDs to assign
             $sms_tag_ids = $this->get_sms_optin_tag_ids();
+            
+            // Merge with extra tags from shortcode
+            if (!empty($extra_tags)) {
+                $sms_tag_ids = array_unique(array_merge($sms_tag_ids, array_filter($extra_tags)));
+            }
+            
             error_log('LCD People: Tag IDs to assign: ' . implode(', ', $sms_tag_ids));
             
             // 1. Create/update contact in CallHub with tag IDs

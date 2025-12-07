@@ -5,7 +5,7 @@
  * Handles the custom opt-in form functionality including:
  * - Shortcode registration
  * - Modal integration  
- * - 2-step email/SMS opt-in process
+ * - Combined email/SMS opt-in form
  * - Sender.net synchronization
  * 
  * @package LCD_People
@@ -41,13 +41,7 @@ class LCD_People_Optin_Handler {
         // Register shortcode
         add_shortcode('lcd_optin_form', array($this, 'render_optin_form_shortcode'));
         
-        // AJAX handlers
-        add_action('wp_ajax_lcd_optin_submit_email', array($this, 'ajax_submit_email'));
-        add_action('wp_ajax_nopriv_lcd_optin_submit_email', array($this, 'ajax_submit_email'));
-        
-        add_action('wp_ajax_lcd_optin_submit_final', array($this, 'ajax_submit_final'));
-        add_action('wp_ajax_nopriv_lcd_optin_submit_final', array($this, 'ajax_submit_final'));
-        
+        // AJAX handler for combined form
         add_action('wp_ajax_lcd_optin_submit_combined', array($this, 'ajax_submit_combined'));
         add_action('wp_ajax_nopriv_lcd_optin_submit_combined', array($this, 'ajax_submit_combined'));
         
@@ -119,180 +113,41 @@ class LCD_People_Optin_Handler {
     public function render_optin_form_shortcode($atts = array()) {
         $atts = shortcode_atts(array(
             'modal' => 'false',
-            'type' => 'two-step' // 'two-step' (default) or 'combined' (all fields in one form)
+            'sender_groups' => '',   // Comma-separated Sender.net group IDs to add
+            'callhub_tags' => ''     // Comma-separated CallHub tag IDs to add
         ), $atts);
         
-        return $this->render_optin_form($atts['modal'] === 'true', $atts['type']);
+        // Parse comma-separated values into arrays
+        $extra_sender_groups = !empty($atts['sender_groups']) 
+            ? array_map('trim', explode(',', $atts['sender_groups'])) 
+            : array();
+        $extra_callhub_tags = !empty($atts['callhub_tags']) 
+            ? array_map('trim', explode(',', $atts['callhub_tags'])) 
+            : array();
+        
+        return $this->render_optin_form($atts['modal'] === 'true', $extra_sender_groups, $extra_callhub_tags);
     }
     
     /**
      * Render the opt-in form HTML
      * 
      * @param bool $is_modal Whether this is for modal display
-     * @param string $form_type Type of form ('two-step' or 'combined')
+     * @param array $extra_sender_groups Additional Sender.net group IDs from shortcode
+     * @param array $extra_callhub_tags Additional CallHub tag IDs from shortcode
      * @return string Form HTML
      */
-    public function render_optin_form($is_modal = false, $form_type = 'two-step') {
+    public function render_optin_form($is_modal = false, $extra_sender_groups = array(), $extra_callhub_tags = array()) {
         $settings = $this->get_optin_settings();
         $available_groups = $this->get_available_groups();
         
         // Note: Empty available_groups is OK - form can work with just auto-add groups
         // from email_optin/sms_optin settings
         
-        // Check if we should show SMS step directly (for 10 DLC review)
-        $force_step = null;
-        if (isset($_GET['view']) && $_GET['view'] === 'sms') {
-            $force_step = 'sms';
-        }
-        
         $container_class = $is_modal ? 'lcd-optin-modal' : 'lcd-optin-embedded';
         
         ob_start();
         include __DIR__ . '/../templates/optin-form.php';
         return ob_get_clean();
-    }
-    
-    /**
-     * Handle email step submission
-     */
-    public function ajax_submit_email() {
-        check_ajax_referer('lcd_optin_nonce', 'nonce');
-        
-        $first_name = sanitize_text_field($_POST['first_name'] ?? '');
-        $last_name = sanitize_text_field($_POST['last_name'] ?? '');
-        $email = sanitize_email($_POST['email'] ?? '');
-        $groups = array_map('sanitize_text_field', $_POST['groups'] ?? array());
-        $main_consent = !empty($_POST['main_consent']);
-        
-        // Validation
-        if (empty($first_name) || empty($last_name) || empty($email)) {
-            wp_send_json_error(array(
-                'message' => __('Please fill in all required fields.', 'lcd-people')
-            ));
-        }
-        
-        if (!is_email($email)) {
-            wp_send_json_error(array(
-                'message' => __('Please enter a valid email address.', 'lcd-people')
-            ));
-        }
-        
-        // Note: Empty $groups is OK - form can work with just auto-add groups
-        // from email_optin/sms_optin settings
-        
-        // Validate main consent if disclaimer is configured
-        $settings = $this->get_optin_settings();
-        if (!empty($settings['main_disclaimer']) && !$main_consent) {
-            wp_send_json_error(array(
-                'message' => __('Please accept the terms and conditions.', 'lcd-people')
-            ));
-        }
-        
-        // Immediately sync to Sender.net for email signup (without SMS)
-        $sync_result = $this->sync_to_sender($email, $first_name, $last_name, $groups, null);
-        
-        if (!$sync_result['success']) {
-            wp_send_json_error(array(
-                'message' => $sync_result['message'] ?? __('An error occurred. Please try again.', 'lcd-people')
-            ));
-        }
-        
-        // Store in session for SMS step
-        $session_data = array(
-            'first_name' => $first_name,
-            'last_name' => $last_name,
-            'email' => $email,
-            'groups' => $groups,
-            'timestamp' => time()
-        );
-        
-        // Use transients instead of sessions for better compatibility
-        $session_key = 'lcd_optin_' . wp_generate_password(20, false);
-        set_transient($session_key, $session_data, 30 * MINUTE_IN_SECONDS); // 30 minutes
-        
-        wp_send_json_success(array(
-            'message' => __('Thank you! You\'ve been added to our email list. Would you like to receive text messages too?', 'lcd-people'),
-            'session_key' => $session_key
-        ));
-    }
-    
-    /**
-     * Handle final submission (SMS opt-in only)
-     */
-    public function ajax_submit_final() {
-        check_ajax_referer('lcd_optin_nonce', 'nonce');
-        
-        $session_key = sanitize_text_field($_POST['session_key'] ?? '');
-        $phone = sanitize_text_field($_POST['phone'] ?? '');
-        $sms_consent = !empty($_POST['sms_consent']);
-        $main_consent = !empty($_POST['main_consent']);
-        
-        // Check if session exists
-        if (empty($session_key)) {
-            wp_send_json_error(array(
-                'message' => __('Please start from the beginning of our sign-up process to subscribe.', 'lcd-people'),
-                'needs_redirect' => true
-            ));
-        }
-        
-        // Validate main consent if disclaimer is configured
-        $settings = $this->get_optin_settings();
-        if (!empty($settings['main_disclaimer']) && !$main_consent) {
-            wp_send_json_error(array(
-                'message' => __('Please accept the terms and conditions.', 'lcd-people')
-            ));
-        }
-        
-        // Retrieve session data
-        $session_data = get_transient($session_key);
-        if (!$session_data) {
-            wp_send_json_error(array(
-                'message' => __('Session expired. Please start over.', 'lcd-people')
-            ));
-        }
-        
-        $email = $session_data['email'];
-        $first_name = $session_data['first_name'];
-        $last_name = $session_data['last_name'];
-        
-        // Clean up session
-        delete_transient($session_key);
-        
-        // If SMS consent given, update user with SMS info
-        if ($sms_consent) {
-            // Validate phone if SMS consent given
-            if (empty($phone)) {
-                wp_send_json_error(array(
-                    'message' => __('Phone number is required for SMS updates.', 'lcd-people')
-                ));
-            }
-            
-            // Format phone number
-            $phone = $this->format_phone_number($phone);
-            
-            // Update user with SMS info (this adds SMS groups and phone number)
-            $result = $this->update_user_sms_preferences(
-                $email,
-                $first_name,
-                $last_name,
-                $phone
-            );
-            
-            if ($result['success']) {
-                wp_send_json_success(array(
-                    'message' => __('Great! You\'ve been added to our SMS list too.', 'lcd-people')
-                ));
-            } else {
-                wp_send_json_error(array(
-                    'message' => $result['message'] ?? __('An error occurred adding SMS. Your email subscription is still active.', 'lcd-people')
-                ));
-            }
-        } else {
-            // User chose to skip SMS
-            wp_send_json_success(array(
-                'message' => __('Thank you! You\'re all set with email updates.', 'lcd-people')
-            ));
-        }
     }
     
     /**
@@ -308,6 +163,14 @@ class LCD_People_Optin_Handler {
         $groups = array_map('sanitize_text_field', $_POST['groups'] ?? array());
         $sms_consent = !empty($_POST['sms_consent']);
         $main_consent = !empty($_POST['main_consent']);
+        
+        // Parse extra groups/tags from shortcode (comma-separated)
+        $extra_sender_groups = !empty($_POST['extra_sender_groups']) 
+            ? array_map('trim', explode(',', sanitize_text_field($_POST['extra_sender_groups']))) 
+            : array();
+        $extra_callhub_tags = !empty($_POST['extra_callhub_tags']) 
+            ? array_map('trim', explode(',', sanitize_text_field($_POST['extra_callhub_tags']))) 
+            : array();
         
         // Validation - only email is required
         if (empty($email)) {
@@ -341,7 +204,15 @@ class LCD_People_Optin_Handler {
         $formatted_phone = !empty($phone) ? $this->format_phone_number($phone) : null;
         
         // Sync to Sender.net (with SMS only if phone provided and consent given)
-        $sync_result = $this->sync_to_sender($email, $first_name, $last_name, $groups, ($sms_consent && $formatted_phone) ? $formatted_phone : null);
+        $sync_result = $this->sync_to_sender(
+            $email, 
+            $first_name, 
+            $last_name, 
+            $groups, 
+            ($sms_consent && $formatted_phone) ? $formatted_phone : null,
+            $extra_sender_groups,
+            $extra_callhub_tags
+        );
         
         if (!$sync_result['success']) {
             wp_send_json_error(array(
@@ -446,9 +317,11 @@ class LCD_People_Optin_Handler {
      * @param string $last_name  
      * @param array $groups Selected groups by user
      * @param string|null $phone
+     * @param array $extra_sender_groups Additional Sender.net group IDs from shortcode
+     * @param array $extra_callhub_tags Additional CallHub tag IDs from shortcode
      * @return array Result with success status and message
      */
-    private function sync_to_sender($email, $first_name, $last_name, $groups, $phone = null) {
+    private function sync_to_sender($email, $first_name, $last_name, $groups, $phone = null, $extra_sender_groups = array(), $extra_callhub_tags = array()) {
         $token = get_option('lcd_people_sender_token');
         
         if (empty($token)) {
@@ -468,15 +341,16 @@ class LCD_People_Optin_Handler {
             $auto_groups = array_merge($auto_groups, $sms_groups);
         }
         
-        $all_groups = array_merge($groups, $auto_groups);
-        $all_groups = array_unique($all_groups); // Remove duplicates
+        // Merge all groups: user-selected + auto-add + extra from shortcode
+        $all_groups = array_merge($groups, $auto_groups, $extra_sender_groups);
+        $all_groups = array_unique(array_filter($all_groups)); // Remove duplicates and empty values
         
         // Prepare subscriber data
         $subscriber_data = array(
             'email' => $email,
             'firstname' => $first_name,
             'lastname' => $last_name,
-            'groups' => $all_groups,
+            'groups' => array_values($all_groups), // Re-index array
             'trigger_automation' => true, // Always trigger automations for opt-ins
             'trigger_groups' => true
         );
@@ -510,7 +384,7 @@ class LCD_People_Optin_Handler {
         if ($status === 200 || $status === 201) {
             // Also sync to CallHub if phone was provided (SMS opt-in)
             if (!empty($phone)) {
-                $this->sync_to_callhub($phone, $first_name, $last_name, $email, true);
+                $this->sync_to_callhub($phone, $first_name, $last_name, $email, true, $extra_callhub_tags);
             }
             
             return array(
@@ -536,9 +410,10 @@ class LCD_People_Optin_Handler {
      * @param string $last_name Last name
      * @param string $email Email address
      * @param bool $sms_opted_in Whether user has opted in to SMS
+     * @param array $extra_tags Additional CallHub tag IDs from shortcode
      * @return array Result with success status and message
      */
-    private function sync_to_callhub($phone, $first_name, $last_name, $email, $sms_opted_in) {
+    private function sync_to_callhub($phone, $first_name, $last_name, $email, $sms_opted_in, $extra_tags = array()) {
         // Check if CallHub is configured
         $api_key = get_option('lcd_people_callhub_api_key', '');
         if (empty($api_key)) {
@@ -558,7 +433,7 @@ class LCD_People_Optin_Handler {
         }
         
         $callhub_handler = new LCD_People_CallHub_Handler($this->main_plugin);
-        $result = $callhub_handler->sync_sms_status($phone, $first_name, $last_name, $email, $sms_opted_in);
+        $result = $callhub_handler->sync_sms_status($phone, $first_name, $last_name, $email, $sms_opted_in, $extra_tags);
         
         // Log the result
         if (!$result['success']) {
