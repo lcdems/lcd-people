@@ -169,36 +169,6 @@ class LCD_People_Settings {
             'default' => ''
         ));
 
-        register_setting('lcd_people_sender_settings', 'lcd_people_optin_email_title', array(
-            'type' => 'string',
-            'sanitize_callback' => 'sanitize_text_field',
-            'default' => 'Join Our Email List'
-        ));
-
-        register_setting('lcd_people_sender_settings', 'lcd_people_optin_sms_title', array(
-            'type' => 'string',
-            'sanitize_callback' => 'sanitize_text_field',
-            'default' => 'Stay Connected with SMS'
-        ));
-
-        register_setting('lcd_people_sender_settings', 'lcd_people_optin_email_cta', array(
-            'type' => 'string',
-            'sanitize_callback' => 'sanitize_text_field',
-            'default' => 'Continue'
-        ));
-
-        register_setting('lcd_people_sender_settings', 'lcd_people_optin_sms_cta', array(
-            'type' => 'string',
-            'sanitize_callback' => 'sanitize_text_field',
-            'default' => 'Join SMS List'
-        ));
-
-        register_setting('lcd_people_sender_settings', 'lcd_people_optin_skip_sms_cta', array(
-            'type' => 'string',
-            'sanitize_callback' => 'sanitize_text_field',
-            'default' => 'No Thanks, Email Only'
-        ));
-
         // Conversion tracking settings
         register_setting('lcd_people_sender_settings', 'lcd_people_optin_google_gtag_id', array(
             'type' => 'string',
@@ -259,48 +229,6 @@ class LCD_People_Settings {
             'lcd_people_optin_groups',
             __('Available Groups for Opt-in', 'lcd-people'),
             array($this, 'render_optin_groups_field'),
-            'lcd-people-sender-settings',
-            'lcd_people_optin_section'
-        );
-
-
-
-        add_settings_field(
-            'lcd_people_optin_email_title',
-            __('Email Step Title', 'lcd-people'),
-            array($this, 'render_optin_email_title_field'),
-            'lcd-people-sender-settings',
-            'lcd_people_optin_section'
-        );
-
-        add_settings_field(
-            'lcd_people_optin_sms_title',
-            __('SMS Step Title', 'lcd-people'),
-            array($this, 'render_optin_sms_title_field'),
-            'lcd-people-sender-settings',
-            'lcd_people_optin_section'
-        );
-
-        add_settings_field(
-            'lcd_people_optin_email_cta',
-            __('Email Step CTA Button', 'lcd-people'),
-            array($this, 'render_optin_email_cta_field'),
-            'lcd-people-sender-settings',
-            'lcd_people_optin_section'
-        );
-
-        add_settings_field(
-            'lcd_people_optin_sms_cta',
-            __('SMS Opt-in CTA Button', 'lcd-people'),
-            array($this, 'render_optin_sms_cta_field'),
-            'lcd-people-sender-settings',
-            'lcd_people_optin_section'
-        );
-
-        add_settings_field(
-            'lcd_people_optin_skip_sms_cta',
-            __('Skip SMS CTA Button', 'lcd-people'),
-            array($this, 'render_optin_skip_sms_cta_field'),
             'lcd-people-sender-settings',
             'lcd_people_optin_section'
         );
@@ -898,46 +826,6 @@ class LCD_People_Settings {
             });
         });
         </script>
-        <?php
-    }
-
-    public function render_optin_email_title_field() {
-        $value = get_option('lcd_people_optin_email_title', 'Join Our Email List');
-        ?>
-        <input type="text" name="lcd_people_optin_email_title" value="<?php echo esc_attr($value); ?>" class="regular-text">
-        <p class="description"><?php _e('Title shown on the first step of the opt-in form', 'lcd-people'); ?></p>
-        <?php
-    }
-
-    public function render_optin_sms_title_field() {
-        $value = get_option('lcd_people_optin_sms_title', 'Stay Connected with SMS');
-        ?>
-        <input type="text" name="lcd_people_optin_sms_title" value="<?php echo esc_attr($value); ?>" class="regular-text">
-        <p class="description"><?php _e('Title shown on the SMS opt-in step', 'lcd-people'); ?></p>
-        <?php
-    }
-
-    public function render_optin_email_cta_field() {
-        $value = get_option('lcd_people_optin_email_cta', 'Continue');
-        ?>
-        <input type="text" name="lcd_people_optin_email_cta" value="<?php echo esc_attr($value); ?>" class="regular-text">
-        <p class="description"><?php _e('Button text for the email step', 'lcd-people'); ?></p>
-        <?php
-    }
-
-    public function render_optin_sms_cta_field() {
-        $value = get_option('lcd_people_optin_sms_cta', 'Join SMS List');
-        ?>
-        <input type="text" name="lcd_people_optin_sms_cta" value="<?php echo esc_attr($value); ?>" class="regular-text">
-        <p class="description"><?php _e('Button text for opting into SMS', 'lcd-people'); ?></p>
-        <?php
-    }
-
-    public function render_optin_skip_sms_cta_field() {
-        $value = get_option('lcd_people_optin_skip_sms_cta', 'No Thanks, Email Only');
-        ?>
-        <input type="text" name="lcd_people_optin_skip_sms_cta" value="<?php echo esc_attr($value); ?>" class="regular-text">
-        <p class="description"><?php _e('Button text for skipping SMS opt-in', 'lcd-people'); ?></p>
         <?php
     }
 
@@ -1618,12 +1506,19 @@ class LCD_People_Settings {
                 </ul>
                 
                 <h4><?php _e('Shortcode Parameters', 'lcd-people'); ?></h4>
-                <p><?php _e('You can add extra groups/tags on a per-shortcode basis using these optional parameters:', 'lcd-people'); ?></p>
+                <p><?php _e('Customize the form with these optional parameters:', 'lcd-people'); ?></p>
                 <ul>
+                    <li><code>title</code> - <?php _e('Form title (hidden by default, shows nothing unless specified)', 'lcd-people'); ?></li>
+                    <li><code>cta</code> - <?php _e('Submit button text (default: "Sign Up")', 'lcd-people'); ?></li>
                     <li><code>sender_groups</code> - <?php _e('Comma-separated Sender.net group IDs to add', 'lcd-people'); ?></li>
                     <li><code>callhub_tags</code> - <?php _e('Comma-separated CallHub tag IDs to add', 'lcd-people'); ?></li>
                 </ul>
-                <p><strong><?php _e('Example:', 'lcd-people'); ?></strong> <code>[lcd_optin_form sender_groups="abc123,def456" callhub_tags="tag1,tag2"]</code></p>
+                <p><strong><?php _e('Examples:', 'lcd-people'); ?></strong></p>
+                <ul>
+                    <li><code>[lcd_optin_form]</code> - <?php _e('Basic form with no title', 'lcd-people'); ?></li>
+                    <li><code>[lcd_optin_form title="Join Our Newsletter" cta="Subscribe"]</code> - <?php _e('Custom title and button', 'lcd-people'); ?></li>
+                    <li><code>[lcd_optin_form sender_groups="abc123" callhub_tags="tag1,tag2"]</code> - <?php _e('With extra groups/tags', 'lcd-people'); ?></li>
+                </ul>
                 
                 <p class="description"><?php _e('The form will display groups in the order configured above, with default selections pre-checked. Email and SMS auto-add groups will be automatically assigned based on user selections. All opt-ins will trigger welcome automations.', 'lcd-people'); ?></p>
                 

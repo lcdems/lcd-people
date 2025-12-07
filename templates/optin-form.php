@@ -2,9 +2,9 @@
     
     <!-- Combined Form: All fields in one step -->
     <div class="lcd-optin-step lcd-optin-step-combined active" id="lcd-optin-step-combined">
-        <?php if (!$is_modal): ?>
+        <?php if (!empty($form_title)): ?>
         <div class="lcd-optin-header">
-            <h3><?php echo esc_html($settings['email_title']); ?></h3>
+            <h3><?php echo esc_html($form_title); ?></h3>
         </div>
         <?php endif; ?>
         
@@ -83,7 +83,7 @@
             
             <div class="lcd-form-actions">
                 <button type="submit" class="lcd-btn lcd-btn-primary" id="lcd-combined-submit-btn" disabled>
-                    <?php echo esc_html($settings['email_cta']); ?>
+                    <?php echo esc_html($form_cta); ?>
                 </button>
             </div>
         </form>

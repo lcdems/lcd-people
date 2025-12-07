@@ -113,6 +113,8 @@ class LCD_People_Optin_Handler {
     public function render_optin_form_shortcode($atts = array()) {
         $atts = shortcode_atts(array(
             'modal' => 'false',
+            'title' => '',           // Form title (empty = hidden)
+            'cta' => 'Sign Up',      // Submit button text
             'sender_groups' => '',   // Comma-separated Sender.net group IDs to add
             'callhub_tags' => ''     // Comma-separated CallHub tag IDs to add
         ), $atts);
@@ -125,7 +127,13 @@ class LCD_People_Optin_Handler {
             ? array_map('trim', explode(',', $atts['callhub_tags'])) 
             : array();
         
-        return $this->render_optin_form($atts['modal'] === 'true', $extra_sender_groups, $extra_callhub_tags);
+        return $this->render_optin_form(
+            $atts['modal'] === 'true', 
+            $extra_sender_groups, 
+            $extra_callhub_tags,
+            $atts['title'],
+            $atts['cta']
+        );
     }
     
     /**
@@ -134,9 +142,11 @@ class LCD_People_Optin_Handler {
      * @param bool $is_modal Whether this is for modal display
      * @param array $extra_sender_groups Additional Sender.net group IDs from shortcode
      * @param array $extra_callhub_tags Additional CallHub tag IDs from shortcode
+     * @param string $title Form title (empty = hidden)
+     * @param string $cta Submit button text
      * @return string Form HTML
      */
-    public function render_optin_form($is_modal = false, $extra_sender_groups = array(), $extra_callhub_tags = array()) {
+    public function render_optin_form($is_modal = false, $extra_sender_groups = array(), $extra_callhub_tags = array(), $title = '', $cta = 'Sign Up') {
         $settings = $this->get_optin_settings();
         $available_groups = $this->get_available_groups();
         
@@ -144,6 +154,10 @@ class LCD_People_Optin_Handler {
         // from email_optin/sms_optin settings
         
         $container_class = $is_modal ? 'lcd-optin-modal' : 'lcd-optin-embedded';
+        
+        // Pass title and CTA to template
+        $form_title = $title;
+        $form_cta = $cta;
         
         ob_start();
         include __DIR__ . '/../templates/optin-form.php';
@@ -470,11 +484,6 @@ class LCD_People_Optin_Handler {
      */
     private function get_optin_settings() {
         return array(
-            'email_title' => get_option('lcd_people_optin_email_title', 'Join Our Email List'),
-            'sms_title' => get_option('lcd_people_optin_sms_title', 'Stay Connected with SMS'),
-            'email_cta' => get_option('lcd_people_optin_email_cta', 'Continue'),
-            'sms_cta' => get_option('lcd_people_optin_sms_cta', 'Join SMS List'),
-            'skip_sms_cta' => get_option('lcd_people_optin_skip_sms_cta', 'No Thanks, Email Only'),
             'main_disclaimer' => get_option('lcd_people_optin_main_disclaimer', 'By signing up, you agree to receive emails from us. You can unsubscribe at any time.'),
             'sms_disclaimer' => get_option('lcd_people_optin_sms_disclaimer', 'By checking this box, you consent to receive text messages from us. Message and data rates may apply. Reply STOP to opt out at any time.')
         );
@@ -575,11 +584,11 @@ class LCD_People_Optin_Handler {
             return;
         }
         
-        // Pre-generate the modal content
-        $modal_content = $this->render_optin_form(true);
+        // Pre-generate the modal content (modal mode, no extra groups/tags, default title "Sign Up", default CTA)
+        $modal_content = $this->render_optin_form(true, array(), array(), 'Sign Up', 'Sign Up');
         // Properly escape for JavaScript using JSON encoding
         $modal_content_js = json_encode($modal_content);
-        $modal_title_js = json_encode(get_option('lcd_people_optin_email_title', 'Join Our Email List'));
+        $modal_title_js = json_encode('Sign Up');
         
         ?>
         <script type="text/javascript">
