@@ -1,0 +1,137 @@
+/* LCD Email Settings Admin Styles */
+
+/* Card styling */
+.wrap .card {
+    padding: 15px 20px;
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+    box-shadow: 0 1px 1px rgba(0,0,0,.04);
+}
+
+.wrap .card h2,
+.wrap .card h3 {
+    margin-top: 0;
+}
+
+/* Connection status */
+#sender-connection-result {
+    margin-top: 10px;
+    padding: 8px 12px;
+    border-radius: 4px;
+}
+
+/* Group assignments */
+.lcd-multi-select {
+    min-height: 100px;
+}
+
+/* Sortable opt-in groups */
+.sortable-groups {
+    max-width: 500px;
+}
+
+.optin-group-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 15px;
+    margin-bottom: 5px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.optin-group-item:hover {
+    border-color: #0073aa;
+}
+
+.optin-group-item .drag-handle {
+    cursor: move;
+    color: #999;
+}
+
+.optin-group-item .group-name {
+    flex: 1;
+    font-weight: 500;
+}
+
+.optin-group-item .remove-group {
+    color: #dc3232;
+}
+
+.optin-group-item .remove-group:hover {
+    color: #a00;
+}
+
+/* Campaign field wrapper */
+.campaign-field-wrapper {
+    margin-bottom: 20px;
+}
+
+.campaign-field-wrapper .test-template-btn {
+    margin-left: 10px;
+}
+
+/* WP Mail template wrapper */
+.wpmail-template-wrapper {
+    padding: 15px;
+    background: #f9f9f9;
+    border: 1px solid #e5e5e5;
+    border-radius: 4px;
+    margin-bottom: 20px;
+}
+
+.wpmail-template-wrapper label {
+    display: block;
+    margin-bottom: 5px;
+}
+
+/* Template variables help */
+.card code {
+    background: #eef;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+/* Form table improvements */
+.form-table th {
+    width: 200px;
+    vertical-align: top;
+    padding-top: 15px;
+}
+
+/* Notice styling */
+.notice.inline {
+    margin: 5px 0;
+    padding: 8px 12px;
+}
+
+/* Button groups */
+.button + .button {
+    margin-left: 5px;
+}
+
+/* Description text */
+.description {
+    color: #666;
+    font-style: italic;
+}
+
+/* Responsive adjustments */
+@media screen and (max-width: 782px) {
+    .optin-group-item {
+        flex-wrap: wrap;
+    }
+    
+    .optin-group-item .group-name {
+        flex-basis: 100%;
+        margin-bottom: 5px;
+    }
+    
+    .form-table th {
+        width: auto;
+    }
+}
+

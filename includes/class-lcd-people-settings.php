@@ -49,14 +49,15 @@ class LCD_People_Settings {
             array($this, 'render_settings_page')
         );
 
-        // Sender.net Settings
+        // Sender.net Settings - Now redirects to consolidated Email Settings
+        // Keeping for backwards compatibility - will redirect to new location
         add_submenu_page(
             'edit.php?post_type=lcd_person',
             __('Sender.net Integration Settings', 'lcd-people'),
             __('Sender.net Settings', 'lcd-people'),
             'manage_options',
             'lcd-people-sender-settings',
-            array($this, 'render_sender_settings_page')
+            array($this, 'render_sender_redirect_page')
         );
 
         // Forminator Integration Settings
@@ -1469,6 +1470,32 @@ class LCD_People_Settings {
             'precinct' => __('Precinct (will be added as taxonomy)', 'lcd-people'),
             'latest_volunteer_submission_id' => __('Latest Volunteer Submission ID', 'lcd-people'),
         );
+    }
+
+    /**
+     * Redirect page for old Sender.net settings location
+     */
+    public function render_sender_redirect_page() {
+        ?>
+        <div class="wrap">
+            <h1><?php _e('Sender.net Settings Have Moved', 'lcd-people'); ?></h1>
+            
+            <div class="notice notice-info">
+                <h2><?php _e('Email settings have been consolidated!', 'lcd-people'); ?></h2>
+                <p><?php _e('All email-related settings are now in one place:', 'lcd-people'); ?></p>
+                <p>
+                    <a href="<?php echo admin_url('admin.php?page=lcd-email-settings'); ?>" class="button button-primary button-hero">
+                        <?php _e('Go to Email Settings', 'lcd-people'); ?>
+                    </a>
+                </p>
+                <ul style="margin-left: 20px; list-style: disc;">
+                    <li><strong><?php _e('Sender Config', 'lcd-people'); ?></strong> - <?php _e('API token, transactional emails, group assignments', 'lcd-people'); ?></li>
+                    <li><strong><?php _e('Opt-in Settings', 'lcd-people'); ?></strong> - <?php _e('Form groups, disclaimers, conversion tracking', 'lcd-people'); ?></li>
+                    <li><strong><?php _e('Templates', 'lcd-people'); ?></strong> - <?php _e('Campaign IDs and WordPress mail templates', 'lcd-people'); ?></li>
+                </ul>
+            </div>
+        </div>
+        <?php
     }
 
     public function render_sender_settings_page() {

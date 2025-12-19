@@ -23,41 +23,36 @@ class LCD_People_Email_Admin {
     private function __construct($plugin_instance) {
         $this->plugin_instance = $plugin_instance;
         
-        // Hook into admin_menu to add email settings page
-        add_action('admin_menu', array($this, 'add_email_pages'), 20);
+        // Legacy: Redirect old email pages to new consolidated settings
+        add_action('admin_init', array($this, 'redirect_old_pages'));
         
-        // Register settings
-        add_action('admin_init', array($this, 'register_email_settings'));
-        
-        // Enqueue admin scripts
-        add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_scripts'));
-        
-        // AJAX handlers
+        // Keep AJAX handlers for backwards compatibility during transition
         add_action('wp_ajax_lcd_people_test_template_email', array($this, 'ajax_test_template_email'));
         add_action('wp_ajax_lcd_people_test_wpmail_template', array($this, 'ajax_test_wpmail_template'));
     }
 
-    public function add_email_pages() {
-        // Add main settings page
-        add_submenu_page(
-            'edit.php?post_type=lcd_person',
-            __('Email Settings', 'lcd-people'),
-            __('Email Settings', 'lcd-people'),
-            'manage_options',
-            'lcd-people-email-settings',
-            array($this, 'email_settings_page_callback')
-        );
+    /**
+     * Redirect old email settings pages to new consolidated location
+     */
+    public function redirect_old_pages() {
+        if (!is_admin()) {
+            return;
+        }
+
+        $page = $_GET['page'] ?? '';
         
-        // Add templates page
-        add_submenu_page(
-            'edit.php?post_type=lcd_person',
-            __('Email Templates', 'lcd-people'),
-            __('Email Templates', 'lcd-people'),
-            'manage_options',
-            'lcd-people-email-templates',
-            array($this, 'email_templates_page_callback')
-        );
+        if ($page === 'lcd-people-email-settings') {
+            wp_safe_redirect(admin_url('admin.php?page=lcd-email-settings'));
+            exit;
+        }
+        
+        if ($page === 'lcd-people-email-templates') {
+            wp_safe_redirect(admin_url('admin.php?page=lcd-email-templates'));
+            exit;
+        }
     }
+
+    // Legacy methods removed - menu pages now handled by LCD_Email_Settings_Admin
 
     public function register_email_settings() {
         // Register settings for both pages
@@ -67,19 +62,25 @@ class LCD_People_Email_Admin {
             array($this, 'sanitize_email_settings')
         );
 
-        // Check if Zeptomail is available and enabled
-        $zeptomail_enabled = false;
-        if (class_exists('LCD_Zeptomail')) {
-            $zeptomail_enabled = LCD_Zeptomail::get_instance()->is_enabled();
-        }
+        // Check if Sender.net transactional emails are enabled
+        $sender_transactional_enabled = $this->is_sender_transactional_enabled();
         
         // Email Settings page sections
-        // Zeptomail Integration Section
+        // Sender.net Integration Section
         add_settings_section(
-            'lcd_people_zeptomail_integration',
-            __('Zeptomail Integration Status', 'lcd-people'),
-            array($this, 'zeptomail_integration_section_callback'),
+            'lcd_people_sender_integration',
+            __('Sender.net Transactional Email Status', 'lcd-people'),
+            array($this, 'sender_integration_section_callback'),
             'lcd_people_email_settings'
+        );
+
+        // Sender.net transactional enabled toggle
+        add_settings_field(
+            'sender_transactional_enabled',
+            __('Enable Sender.net Transactional Emails', 'lcd-people'),
+            array($this, 'sender_transactional_enabled_field_callback'),
+            'lcd_people_email_settings',
+            'lcd_people_sender_integration'
         );
 
         // Email Controls Section
@@ -112,23 +113,23 @@ class LCD_People_Email_Admin {
         );
 
         // Email Templates page sections
-        if ($zeptomail_enabled) {
-            // Zeptomail Templates Section
+        if ($sender_transactional_enabled) {
+            // Sender.net Transactional Campaigns Section
             add_settings_section(
-                'lcd_people_zeptomail_templates',
-                __('Zeptomail Template Keys', 'lcd-people'),
-                array($this, 'zeptomail_templates_section_callback'),
+                'lcd_people_sender_templates',
+                __('Sender.net Transactional Campaign IDs', 'lcd-people'),
+                array($this, 'sender_templates_section_callback'),
                 'lcd_people_email_templates'
             );
 
-            // Add Zeptomail template fields
+            // Add Sender.net campaign ID fields
             foreach ($this->get_email_types() as $email_type => $email_label) {
                 add_settings_field(
-                    'zeptomail_template_' . $email_type,
+                    'sender_campaign_' . $email_type,
                     $email_label,
-                    array($this, 'zeptomail_template_field_callback'),
+                    array($this, 'sender_campaign_field_callback'),
                     'lcd_people_email_templates',
-                    'lcd_people_zeptomail_templates',
+                    'lcd_people_sender_templates',
                     array('type' => $email_type, 'label' => $email_label)
                 );
             }
@@ -190,14 +191,18 @@ class LCD_People_Email_Admin {
                 ?>
             </form>
 
-            <?php
-            // Only show connection test if centralized Zeptomail plugin is available
-            if (class_exists('LCD_Zeptomail')) : ?>
-                <div class="lcd-connection-test">
-                    <h3><?php _e('Connection Test', 'lcd-people'); ?></h3>
-                    <p><?php printf(__('Test your Zeptomail connection from the <a href="%s" target="_blank">centralized Zeptomail settings page</a>.', 'lcd-people'), admin_url('options-general.php?page=lcd-zeptomail-settings')); ?></p>
-                </div>
-            <?php endif; ?>
+            <div class="lcd-connection-test">
+                <h3><?php _e('Sender.net API Status', 'lcd-people'); ?></h3>
+                <?php 
+                $token = get_option('lcd_people_sender_token');
+                if (!empty($token)) : ?>
+                    <p class="notice notice-success inline"><?php _e('✓ Sender.net API token is configured.', 'lcd-people'); ?></p>
+                    <p><?php printf(__('Manage your Sender.net settings from the <a href="%s">People Settings page</a>.', 'lcd-people'), admin_url('edit.php?post_type=lcd_person&page=lcd-people-settings')); ?></p>
+                <?php else : ?>
+                    <p class="notice notice-warning inline"><?php _e('Sender.net API token is not configured.', 'lcd-people'); ?></p>
+                    <p><?php printf(__('Configure your Sender.net API token in the <a href="%s">People Settings page</a>.', 'lcd-people'), admin_url('edit.php?post_type=lcd_person&page=lcd-people-settings')); ?></p>
+                <?php endif; ?>
+            </div>
         </div>
         <?php
     }
@@ -212,13 +217,13 @@ class LCD_People_Email_Admin {
             
             <?php 
             // Show email method status notice
-            if (class_exists('LCD_Zeptomail') && LCD_Zeptomail::get_instance()->is_enabled()) : ?>
+            if ($this->is_sender_transactional_enabled()) : ?>
                 <div class="notice notice-info">
-                    <p><strong><?php _e('✓ Using Zeptomail', 'lcd-people'); ?></strong> - <?php _e('People emails will be sent via Zeptomail using the template keys you configure below.', 'lcd-people'); ?></p>
+                    <p><strong><?php _e('✓ Using Sender.net Transactional Campaigns', 'lcd-people'); ?></strong> - <?php _e('People emails will be sent via Sender.net using the transactional campaign IDs you configure below.', 'lcd-people'); ?></p>
                 </div>
             <?php else : ?>
                 <div class="notice notice-warning">
-                    <p><strong><?php _e('Using WordPress wp_mail()', 'lcd-people'); ?></strong> - <?php _e('People emails will be sent using WordPress built-in email functionality. For better deliverability, consider configuring the', 'lcd-people'); ?> <a href="<?php echo admin_url('options-general.php?page=lcd-zeptomail-settings'); ?>"><?php _e('centralized Zeptomail integration', 'lcd-people'); ?></a>.</p>
+                    <p><strong><?php _e('Using WordPress wp_mail()', 'lcd-people'); ?></strong> - <?php _e('People emails will be sent using WordPress built-in email functionality. For better deliverability, enable Sender.net transactional emails in', 'lcd-people'); ?> <a href="<?php echo admin_url('edit.php?post_type=lcd_person&page=lcd-people-email-settings'); ?>"><?php _e('Email Settings', 'lcd-people'); ?></a>.</p>
                 </div>
             <?php endif; ?>
             
@@ -267,7 +272,7 @@ class LCD_People_Email_Admin {
                 }
             });
         
-             // Test Zeptomail template
+             // Test Sender.net transactional campaign
             $(document).on('click', '.test-template-btn', function(e) {
                 e.preventDefault();
                 var button = $(this);
@@ -368,31 +373,59 @@ class LCD_People_Email_Admin {
         wp_add_inline_script('jquery', $script);
     }
 
-    public function zeptomail_integration_section_callback() {
-        if (class_exists('LCD_Zeptomail')) {
-            $zeptomail_enabled = LCD_Zeptomail::get_instance()->is_enabled();
-            if ($zeptomail_enabled) {
-                echo '<p>' . __('Zeptomail is properly configured and enabled for this site. People emails will be sent via Zeptomail.', 'lcd-people') . '</p>';
+    /**
+     * Check if Sender.net transactional emails are enabled
+     * 
+     * @return bool
+     */
+    public function is_sender_transactional_enabled() {
+        $token = get_option('lcd_people_sender_token');
+        $options = get_option('lcd_people_email_settings', array());
+        $enabled = isset($options['sender_transactional_enabled']) ? $options['sender_transactional_enabled'] : 0;
+        return !empty($token) && $enabled;
+    }
+
+    public function sender_integration_section_callback() {
+        $token = get_option('lcd_people_sender_token');
+        if (!empty($token)) {
+            if ($this->is_sender_transactional_enabled()) {
+                echo '<p class="notice notice-success inline">' . __('Sender.net transactional emails are enabled. People emails will be sent via Sender.net.', 'lcd-people') . '</p>';
             } else {
-                echo '<p class="notice notice-warning inline">' . __('Zeptomail plugin is installed but not enabled or configured.', 'lcd-people') . '</p>';
+                echo '<p class="notice notice-info inline">' . __('Sender.net API token is configured but transactional emails are disabled.', 'lcd-people') . '</p>';
             }
         } else {
-            echo '<p class="notice notice-info inline">' . __('Zeptomail plugin is not installed. WordPress mail will be used instead.', 'lcd-people') . '</p>';
+            echo '<p class="notice notice-warning inline">' . __('Sender.net API token is not configured. Configure it in the People Settings page.', 'lcd-people') . '</p>';
         }
+    }
+
+    public function sender_transactional_enabled_field_callback() {
+        $options = get_option('lcd_people_email_settings', array());
+        $value = isset($options['sender_transactional_enabled']) ? $options['sender_transactional_enabled'] : 0;
+        $token = get_option('lcd_people_sender_token');
+        ?>
+        <label>
+            <input type="checkbox" id="sender_transactional_enabled" name="lcd_people_email_settings[sender_transactional_enabled]" value="1" <?php checked(1, $value); ?> <?php disabled(empty($token)); ?> />
+            <?php _e('Use Sender.net for transactional emails', 'lcd-people'); ?>
+        </label>
+        <?php if (empty($token)) : ?>
+            <p class="description" style="color: #d63638;"><?php _e('Sender.net API token must be configured first.', 'lcd-people'); ?></p>
+        <?php else : ?>
+            <p class="description"><?php _e('When enabled, account claim emails will be sent via Sender.net transactional campaigns. When disabled, WordPress wp_mail() will be used.', 'lcd-people'); ?></p>
+        <?php endif; ?>
+        <?php
     }
 
     public function email_controls_section_callback() {
         echo '<p>' . __('Configure general email behavior and settings.', 'lcd-people') . '</p>';
     }
 
-    public function zeptomail_templates_section_callback() {
-        echo '<p>' . __('Configure Zeptomail template keys for each email type. These templates should be created in your Zeptomail dashboard.', 'lcd-people') . '</p>';
+    public function sender_templates_section_callback() {
+        echo '<p>' . __('Configure Sender.net transactional campaign IDs for each email type. These campaigns should be created in your Sender.net dashboard under Transactional Campaigns.', 'lcd-people') . '</p>';
     }
 
     public function wpmail_templates_section_callback() {
-        $zeptomail_enabled = class_exists('LCD_Zeptomail') && LCD_Zeptomail::get_instance()->is_enabled();
-        if ($zeptomail_enabled) {
-            echo '<p>' . __('WordPress mail templates serve as fallback when Zeptomail is unavailable.', 'lcd-people') . '</p>';
+        if ($this->is_sender_transactional_enabled()) {
+            echo '<p>' . __('WordPress mail templates serve as fallback when Sender.net is unavailable.', 'lcd-people') . '</p>';
         } else {
             echo '<p>' . __('Configure email templates for WordPress mail delivery.', 'lcd-people') . '</p>';
         }
@@ -420,21 +453,21 @@ class LCD_People_Email_Admin {
         <?php
     }
 
-    public function zeptomail_template_field_callback($args) {
+    public function sender_campaign_field_callback($args) {
         $options = get_option('lcd_people_email_settings', array());
-        $template_key = $options['template_mapping'][$args['type']] ?? '';
+        $campaign_id = $options['sender_campaigns'][$args['type']] ?? '';
         $email_enabled = $options[$args['type'] . '_enabled'] ?? 1;
         $descriptions = $this->get_email_type_descriptions();
         
-        // Only show template mapping if the email type is enabled
+        // Only show campaign mapping if the email type is enabled
         if (!$email_enabled) {
             echo '<p class="description" style="color: #666; font-style: italic;">' . 
-                 sprintf(__('%s emails are disabled. Enable them in Email Settings to configure templates.', 'lcd-people'), $args['label']) . 
+                 sprintf(__('%s emails are disabled. Enable them in Email Settings to configure campaigns.', 'lcd-people'), $args['label']) . 
                  '</p>';
             return;
         }
         
-        echo '<div class="template-mapping-row" data-email-type="' . esc_attr($args['type']) . '">';
+        echo '<div class="campaign-mapping-row" data-email-type="' . esc_attr($args['type']) . '">';
         
         // Show email type description
         if (isset($descriptions[$args['type']])) {
@@ -444,16 +477,16 @@ class LCD_People_Email_Admin {
         }
         
         echo '<div class="template-input-group">';
-        echo '<input type="text" name="lcd_people_email_settings[template_mapping][' . esc_attr($args['type']) . ']" value="' . esc_attr($template_key) . '" class="regular-text template-key-input" data-email-type="' . esc_attr($args['type']) . '" placeholder="' . esc_attr__('Enter template key (e.g., 2d6f.117fe5b8.k1.f38e8b50-1e7f-11e8-9b33-5254004d4f8f.178b1ae70a4)', 'lcd-people') . '">';
+        echo '<input type="text" name="lcd_people_email_settings[sender_campaigns][' . esc_attr($args['type']) . ']" value="' . esc_attr($campaign_id) . '" class="regular-text template-key-input" data-email-type="' . esc_attr($args['type']) . '" placeholder="' . esc_attr__('Enter transactional campaign ID', 'lcd-people') . '">';
         
-        if (!empty($template_key)) {
-            echo '<button type="button" class="button button-secondary test-template-btn" data-email-type="' . esc_attr($args['type']) . '" data-template-key="' . esc_attr($template_key) . '">' . __('Test Template', 'lcd-people') . '</button>';
+        if (!empty($campaign_id)) {
+            echo '<button type="button" class="button button-secondary test-template-btn" data-email-type="' . esc_attr($args['type']) . '" data-template-key="' . esc_attr($campaign_id) . '">' . __('Test Campaign', 'lcd-people') . '</button>';
         } else {
-            echo '<button type="button" class="button button-secondary test-template-btn" data-email-type="' . esc_attr($args['type']) . '" style="display: none;">' . __('Test Template', 'lcd-people') . '</button>';
+            echo '<button type="button" class="button button-secondary test-template-btn" data-email-type="' . esc_attr($args['type']) . '" style="display: none;">' . __('Test Campaign', 'lcd-people') . '</button>';
         }
         
         echo '</div>';
-        echo '<p class="description">' . sprintf(__('Enter the ZeptoMail template key for %s emails. Find this in your ZeptoMail dashboard under Templates.', 'lcd-people'), $args['label']) . '</p>';
+        echo '<p class="description">' . sprintf(__('Enter the Sender.net transactional campaign ID for %s emails. Find this in your Sender.net dashboard under Transactional Campaigns.', 'lcd-people'), $args['label']) . '</p>';
         echo '<div class="template-test-result" id="test-result-' . esc_attr($args['type']) . '" style="display: none;"></div>';
         echo '</div>';
     }
@@ -566,9 +599,23 @@ class LCD_People_Email_Admin {
                 $field_name = $type . '_enabled';
                 $sanitized[$field_name] = isset($input[$field_name]) ? 1 : 0;
             }
+
+            // Handle Sender.net transactional enabled checkbox
+            $sanitized['sender_transactional_enabled'] = isset($input['sender_transactional_enabled']) ? 1 : 0;
         }
         
-        // Sanitize template mappings (if present in input)
+        // Sanitize Sender.net campaign IDs (if present in input)
+        if (isset($input['sender_campaigns']) && is_array($input['sender_campaigns'])) {
+            // Initialize sender_campaigns array if it doesn't exist
+            if (!isset($sanitized['sender_campaigns'])) {
+                $sanitized['sender_campaigns'] = array();
+            }
+            foreach ($input['sender_campaigns'] as $type => $campaign_id) {
+                $sanitized['sender_campaigns'][$type] = sanitize_text_field($campaign_id);
+            }
+        }
+        
+        // Legacy: Sanitize template mappings (if present in input) - keep for backwards compatibility
         if (isset($input['template_mapping']) && is_array($input['template_mapping'])) {
             // Initialize template_mapping array if it doesn't exist
             if (!isset($sanitized['template_mapping'])) {
@@ -646,73 +693,6 @@ class LCD_People_Email_Admin {
             </ul>
         </div>
         
-        <script type="text/javascript">
-        jQuery(document).ready(function($) {
-            // Handle Zeptomail test emails
-            $('.test-zeptomail-template').on('click', function() {
-                var button = $(this);
-                var template = button.data('template');
-                var type = button.data('type');
-                var email = button.siblings().find('.zeptomail-test-email').val();
-                
-                if (!email) {
-                    alert('<?php _e('Please enter a test email address.', 'lcd-people'); ?>');
-                    return;
-                }
-                
-                button.prop('disabled', true).text('<?php _e('Sending...', 'lcd-people'); ?>');
-                
-                $.post(ajaxurl, {
-                    action: 'lcd_people_test_template_email',
-                    template_key: template,
-                    email_type: type,
-                    test_email: email,
-                    _ajax_nonce: '<?php echo wp_create_nonce('lcd_people_test_email'); ?>'
-                }, function(response) {
-                    if (response.success) {
-                        alert('<?php _e('Test email sent successfully!', 'lcd-people'); ?>');
-                    } else {
-                        alert('<?php _e('Error:', 'lcd-people'); ?> ' + response.data.message);
-                    }
-                    button.prop('disabled', false).text('<?php _e('Send Test', 'lcd-people'); ?>');
-                }).fail(function() {
-                    alert('<?php _e('Failed to send test email.', 'lcd-people'); ?>');
-                    button.prop('disabled', false).text('<?php _e('Send Test', 'lcd-people'); ?>');
-                });
-            });
-            
-            // Handle WP Mail test emails
-            $('.test-wpmail-template').on('click', function() {
-                var button = $(this);
-                var type = button.data('type');
-                var email = button.siblings().find('.wpmail-test-email').val();
-                
-                if (!email) {
-                    alert('<?php _e('Please enter a test email address.', 'lcd-people'); ?>');
-                    return;
-                }
-                
-                button.prop('disabled', true).text('<?php _e('Sending...', 'lcd-people'); ?>');
-                
-                $.post(ajaxurl, {
-                    action: 'lcd_people_test_wpmail_template',
-                    email_type: type,
-                    test_email: email,
-                    _ajax_nonce: '<?php echo wp_create_nonce('lcd_people_test_email'); ?>'
-                }, function(response) {
-                    if (response.success) {
-                        alert('<?php _e('Test email sent successfully!', 'lcd-people'); ?>');
-                    } else {
-                        alert('<?php _e('Error:', 'lcd-people'); ?> ' + response.data.message);
-                    }
-                    button.prop('disabled', false).text('<?php _e('Send Test', 'lcd-people'); ?>');
-                }).fail(function() {
-                    alert('<?php _e('Failed to send test email.', 'lcd-people'); ?>');
-                    button.prop('disabled', false).text('<?php _e('Send Test', 'lcd-people'); ?>');
-                });
-            });
-        });
-        </script>
         <?php
     }
 
@@ -724,41 +704,60 @@ class LCD_People_Email_Admin {
         }
         
         $email_type = sanitize_text_field($_POST['email_type'] ?? '');
-        $template_key = sanitize_text_field($_POST['template_key'] ?? '');
+        $campaign_id = sanitize_text_field($_POST['template_key'] ?? ''); // template_key is now campaign_id
         $test_email = sanitize_email($_POST['test_email'] ?? '');
         
-        if (empty($email_type) || empty($template_key) || empty($test_email)) {
+        if (empty($email_type) || empty($campaign_id) || empty($test_email)) {
             wp_send_json_error(array('message' => __('Missing required fields.', 'lcd-people')));
         }
         
-        if (!class_exists('LCD_Zeptomail')) {
-            wp_send_json_error(array('message' => __('Zeptomail plugin not available.', 'lcd-people')));
+        // Get the Sender handler from the main plugin
+        $sender_handler = $this->get_sender_handler();
+        if (!$sender_handler) {
+            wp_send_json_error(array('message' => __('Sender.net handler not available.', 'lcd-people')));
         }
         
         // Create test template variables
         $template_vars = $this->get_test_template_variables();
         
         try {
-            $result = LCD_Zeptomail::get_instance()->send_template_email(
-                $test_email,
-                $template_key,
-                $template_vars
-            );
+            $result = $sender_handler->test_transactional_connection($campaign_id, $test_email);
             
-            if ($result) {
+            if ($result === true) {
                 wp_send_json_success(array(
-                    'message' => sprintf(__('Test %s email sent successfully to %s using template key: %s', 'lcd-people'), 
+                    'message' => sprintf(__('Test %s email sent successfully to %s using campaign ID: %s', 'lcd-people'), 
                         $this->get_email_types()[$email_type] ?? $email_type, 
                         $test_email, 
-                        $template_key
+                        $campaign_id
                     )
                 ));
+            } elseif (is_wp_error($result)) {
+                wp_send_json_error(array('message' => $result->get_error_message()));
             } else {
-                wp_send_json_error(array('message' => __('Failed to send test email. Please check your template key and email settings.', 'lcd-people')));
+                $error = $sender_handler->get_last_email_error();
+                wp_send_json_error(array('message' => $error ?: __('Failed to send test email. Please check your campaign ID and API settings.', 'lcd-people')));
             }
         } catch (Exception $e) {
             wp_send_json_error(array('message' => $e->getMessage()));
         }
+    }
+
+    /**
+     * Get the Sender handler instance
+     * 
+     * @return LCD_People_Sender_Handler|null
+     */
+    private function get_sender_handler() {
+        if ($this->plugin_instance && method_exists($this->plugin_instance, 'get_sender_handler')) {
+            return $this->plugin_instance->get_sender_handler();
+        }
+        
+        // Fallback: create a new instance
+        if (class_exists('LCD_People_Sender_Handler') && class_exists('LCD_People')) {
+            return new LCD_People_Sender_Handler(LCD_People::get_instance());
+        }
+        
+        return null;
     }
 
     public function ajax_test_wpmail_template() {
@@ -881,20 +880,30 @@ class LCD_People_Email_Admin {
             return false; // Email type disabled
         }
         
-        // Try Zeptomail first if available and configured
-        if (class_exists('LCD_Zeptomail') && LCD_Zeptomail::get_instance()->is_enabled()) {
-            $template_key = isset($options['template_mapping'][$email_type]) ? $options['template_mapping'][$email_type] : '';
+        // Try Sender.net first if enabled and configured
+        if ($this->is_sender_transactional_enabled()) {
+            $campaign_id = isset($options['sender_campaigns'][$email_type]) ? $options['sender_campaigns'][$email_type] : '';
             
-            if (!empty($template_key)) {
-                try {
-                    return LCD_Zeptomail::get_instance()->send_template_email(
-                        $recipient_email,
-                        $template_key,
-                        $template_vars
-                    );
-                } catch (Exception $e) {
-                    error_log('LCD People: Zeptomail error for ' . $email_type . ': ' . $e->getMessage());
-                    // Fall back to WP Mail
+            if (!empty($campaign_id)) {
+                $sender_handler = $this->get_sender_handler();
+                if ($sender_handler) {
+                    try {
+                        $result = $sender_handler->send_transactional_email(
+                            $recipient_email,
+                            $campaign_id,
+                            $template_vars
+                        );
+                        
+                        if ($result) {
+                            return true;
+                        }
+                        
+                        error_log('LCD People: Sender.net error for ' . $email_type . ': ' . $sender_handler->get_last_email_error());
+                        // Fall back to WP Mail
+                    } catch (Exception $e) {
+                        error_log('LCD People: Sender.net exception for ' . $email_type . ': ' . $e->getMessage());
+                        // Fall back to WP Mail
+                    }
                 }
             }
         }

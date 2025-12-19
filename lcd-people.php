@@ -21,6 +21,7 @@ require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-sender-handl
 require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-callhub-handler.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-optin-handler.php';
 require_once plugin_dir_path(__FILE__) . 'admin/class-people-email-admin.php';
+require_once plugin_dir_path(__FILE__) . 'admin/class-email-settings-admin.php';
 
 class LCD_People {
     private static $instance = null;
@@ -37,6 +38,15 @@ class LCD_People {
             self::$instance = new self();
         }
         return self::$instance;
+    }
+
+    /**
+     * Get the Sender.net handler instance
+     * 
+     * @return LCD_People_Sender_Handler
+     */
+    public function get_sender_handler() {
+        return $this->sender_handler;
     }
 
     private function __construct() {
@@ -58,6 +68,8 @@ class LCD_People {
         // Initialize Email Admin (only in admin)
         if (is_admin()) {
             $this->email_admin = LCD_People_Email_Admin::get_instance($this);
+            // Initialize new consolidated email settings admin
+            LCD_Email_Settings_Admin::get_instance($this);
         }
         
         add_action('init', array($this, 'register_post_type'));
@@ -191,16 +203,6 @@ class LCD_People {
                 '1.0.0'
             );
 
-            // Enqueue volunteering meta box styles (only on person edit screens)
-            if (($hook == 'post-new.php' || $hook == 'post.php') && isset($post) && $post->post_type === 'lcd_person') {
-                wp_enqueue_style(
-                    'lcd-people-volunteering-meta-box',
-                    plugins_url('assets/css/volunteering-meta-box.css', __FILE__),
-                    array(),
-                    '1.0.0'
-                );
-            }
-
             // Enqueue Select2 for all pages (needed for settings pages too)
             wp_enqueue_style(
                 'select2',
@@ -225,22 +227,6 @@ class LCD_People {
                 '1.0.0',
                 true
             );
-
-            // Enqueue volunteering meta box script (only on person edit screens)
-            if (($hook == 'post-new.php' || $hook == 'post.php') && isset($post) && $post->post_type === 'lcd_person') {
-                wp_enqueue_script(
-                    'lcd-people-volunteering-meta-box',
-                    plugins_url('assets/js/volunteering-meta-box.js', __FILE__),
-                    array('jquery'),
-                    '1.0.0',
-                    true
-                );
-
-                wp_localize_script('lcd-people-volunteering-meta-box', 'lcdPeopleVolunteering', array(
-                    'viewText' => __('View Submission Data', 'lcd-people'),
-                    'hideText' => __('Hide Submission Data', 'lcd-people')
-                ));
-            }
 
             wp_localize_script('lcd-people-admin', 'lcdPeople', array(
                 'ajaxurl' => admin_url('admin-ajax.php'),
@@ -521,17 +507,6 @@ class LCD_People {
             'low'  // Place it lower down
         );
 
-        // Volunteering Information meta box (conditional on LCD Events plugin)
-        if (function_exists('lcd_get_volunteer_signups')) {
-            add_meta_box(
-                'lcd_person_volunteering',
-                __('Volunteering Information', 'lcd-people'),
-                array($this, 'render_volunteering_meta_box'),
-                'lcd_person',
-                'normal',
-                'default'
-            );
-        }
     }
 
     public function render_contact_meta_box($post) {
@@ -2420,270 +2395,6 @@ class LCD_People {
                 echo '<p style="color: #d63638;"><strong>' . esc_html__('Warning:', 'lcd-people') . '</strong> ' . esc_html__('No primary member is set for this email address among the linked members. Please save one of the members to automatically assign primary status.', 'lcd-people') . '</p>';
             }
         }
-    }
-
-    /**
-     * Render Volunteering Information Meta Box
-     */
-    public function render_volunteering_meta_box($post) {
-        $latest_submission_id = get_post_meta($post->ID, '_lcd_person_latest_volunteer_submission_id', true);
-        $person_email = get_post_meta($post->ID, '_lcd_person_email', true);
-        
-        ?>
-        <div class="lcd-volunteering-info">
-            <?php if (!function_exists('lcd_get_volunteer_signups')): ?>
-                <p class="description">
-                    <?php _e('LCD Events plugin is not active. Volunteer shift information is not available.', 'lcd-people'); ?>
-                </p>
-            <?php else: ?>
-                
-                <!-- Latest Volunteer Submission ID -->
-                <div class="volunteer-submission-section">
-                    <h4><?php _e('Latest Volunteer Form Submission', 'lcd-people'); ?></h4>
-                    <table class="form-table">
-                        <tr>
-                            <th><label for="lcd_person_latest_volunteer_submission_id"><?php _e('Submission ID:', 'lcd-people'); ?></label></th>
-                            <td>
-                                <input type="text" 
-                                       id="lcd_person_latest_volunteer_submission_id" 
-                                       name="lcd_person_latest_volunteer_submission_id" 
-                                       value="<?php echo esc_attr($latest_submission_id); ?>" 
-                                       class="regular-text">
-                                <p class="description">
-                                    <?php _e('This field can be automatically populated from form submissions via the Forminator integration mapping.', 'lcd-people'); ?>
-                                </p>
-                            </td>
-                        </tr>
-                    </table>
-                    
-                    <?php if (!empty($latest_submission_id)): ?>
-                        <?php $submission_data = $this->get_forminator_submission_data($latest_submission_id); ?>
-                        <?php if ($submission_data): ?>
-                                                         <div class="submission-data-section">
-                                 <button type="button" class="button button-secondary submission-toggle" data-target="submission-details">
-                                     <span class="dashicons dashicons-arrow-down-alt2"></span>
-                                     <span class="button-text"><?php _e('View Submission Data', 'lcd-people'); ?></span>
-                                 </button>
-                                <div id="submission-details" class="submission-details" style="display: none;">
-                                    <div class="submission-meta">
-                                        <p><strong><?php _e('Submitted:', 'lcd-people'); ?></strong> <?php echo esc_html($submission_data['date_created']); ?></p>
-                                        <?php if (!empty($submission_data['form_name'])): ?>
-                                            <p><strong><?php _e('Form:', 'lcd-people'); ?></strong> <?php echo esc_html($submission_data['form_name']); ?></p>
-                                        <?php endif; ?>
-                                    </div>
-                                    <div class="submission-fields">
-                                        <h5><?php _e('Submitted Data:', 'lcd-people'); ?></h5>
-                                        <table class="widefat striped">
-                                            <thead>
-                                                <tr>
-                                                    <th><?php _e('Field', 'lcd-people'); ?></th>
-                                                    <th><?php _e('Value', 'lcd-people'); ?></th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                <?php foreach ($submission_data['fields'] as $field_name => $field_value): ?>
-                                                    <tr>
-                                                        <td><strong><?php echo esc_html($field_name); ?></strong></td>
-                                                        <td><?php echo esc_html($field_value); ?></td>
-                                                    </tr>
-                                                <?php endforeach; ?>
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            </div>
-                        <?php else: ?>
-                            <div class="submission-error">
-                                <p class="description" style="color: #d63638;">
-                                    <?php _e('Submission data could not be retrieved. The submission may not exist or Forminator plugin may not be active.', 'lcd-people'); ?>
-                                </p>
-                            </div>
-                        <?php endif; ?>
-                    <?php endif; ?>
-                </div>
-
-                <!-- Upcoming Volunteer Shifts -->
-                <div class="upcoming-shifts-section">
-                    <h4><?php _e('Upcoming Volunteer Shifts', 'lcd-people'); ?></h4>
-                    <?php
-                    $upcoming_shifts = $this->get_person_upcoming_volunteer_shifts($post->ID, $person_email);
-                    
-                    if (empty($upcoming_shifts)): ?>
-                        <p><?php _e('No upcoming volunteer shifts found.', 'lcd-people'); ?></p>
-                    <?php else: ?>
-                        <div class="volunteer-shifts-list">
-                            <?php foreach ($upcoming_shifts as $shift): ?>
-                                <div class="shift-item">
-                                    <div class="shift-header">
-                                        <h5>
-                                            <a href="<?php echo get_edit_post_link($shift['event_id']); ?>" target="_blank">
-                                                <?php echo esc_html($shift['event_title']); ?>
-                                            </a>
-                                        </h5>
-                                        <span class="shift-date">
-                                            <?php echo esc_html($shift['formatted_event_date']); ?>
-                                        </span>
-                                    </div>
-                                    <div class="shift-details">
-                                        <div class="shift-info">
-                                            <strong><?php _e('Shift:', 'lcd-people'); ?></strong> 
-                                            <?php echo esc_html($shift['shift_title']); ?>
-                                        </div>
-                                        <?php if (!empty($shift['shift_date_time'])): ?>
-                                            <div class="shift-time">
-                                                <strong><?php _e('Time:', 'lcd-people'); ?></strong>
-                                                <?php echo esc_html($shift['shift_date_time']); ?>
-                                            </div>
-                                        <?php endif; ?>
-                                        <?php if (!empty($shift['event_location'])): ?>
-                                            <div class="shift-location">
-                                                <strong><?php _e('Location:', 'lcd-people'); ?></strong>
-                                                <?php echo esc_html($shift['event_location']); ?>
-                                            </div>
-                                        <?php endif; ?>
-                                        <?php if (!empty($shift['volunteer_notes'])): ?>
-                                            <div class="shift-notes">
-                                                <strong><?php _e('Notes:', 'lcd-people'); ?></strong>
-                                                <?php echo esc_html($shift['volunteer_notes']); ?>
-                                            </div>
-                                        <?php endif; ?>
-                                        <div class="shift-status">
-                                            <strong><?php _e('Status:', 'lcd-people'); ?></strong>
-                                            <span class="status-<?php echo esc_attr($shift['status']); ?>">
-                                                <?php echo esc_html(ucfirst($shift['status'])); ?>
-                                            </span>
-                                        </div>
-                                        <div class="shift-signup-date">
-                                            <strong><?php _e('Signed up:', 'lcd-people'); ?></strong>
-                                            <?php echo esc_html($shift['formatted_signup_date']); ?>
-                                        </div>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                    <?php endif; ?>
-                </div>
-                
-            <?php endif; ?>
-        </div>
-        <?php
-    }
-
-    /**
-     * Get upcoming volunteer shifts for a person
-     */
-    private function get_person_upcoming_volunteer_shifts($person_id, $person_email = '') {
-        if (!function_exists('lcd_get_volunteer_signups')) {
-            return array();
-        }
-
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'lcd_volunteer_signups';
-        $today = current_time('Y-m-d');
-
-        // Get signups for this person by person_id or email
-        $where_conditions = array();
-        $where_values = array();
-
-        if (!empty($person_id)) {
-            $where_conditions[] = 'person_id = %d';
-            $where_values[] = $person_id;
-        }
-
-        if (!empty($person_email)) {
-            $where_conditions[] = 'volunteer_email = %s';
-            $where_values[] = $person_email;
-        }
-
-        if (empty($where_conditions)) {
-            return array();
-        }
-
-        $where_clause = '(' . implode(' OR ', $where_conditions) . ')';
-
-        $query = "
-            SELECT vs.*, p.post_title as event_title
-            FROM {$table_name} vs
-            LEFT JOIN {$wpdb->posts} p ON vs.event_id = p.ID
-            WHERE {$where_clause}
-            AND p.post_status = 'publish'
-            ORDER BY vs.signup_date DESC
-        ";
-
-        $signups = $wpdb->get_results($wpdb->prepare($query, ...$where_values));
-
-        if (empty($signups)) {
-            return array();
-        }
-
-        $upcoming_shifts = array();
-
-        foreach ($signups as $signup) {
-            // Get event meta data
-            $event_date = get_post_meta($signup->event_id, '_event_date', true);
-            $event_location = get_post_meta($signup->event_id, '_event_location', true);
-            
-            // Skip past events
-            if (!empty($event_date) && $event_date < $today) {
-                continue;
-            }
-
-            // Get volunteer shifts data to get shift details
-            $volunteer_shifts = get_post_meta($signup->event_id, '_volunteer_shifts', true);
-            $shift_details = array();
-            
-            if (is_array($volunteer_shifts) && isset($volunteer_shifts[$signup->shift_index])) {
-                $shift_details = $volunteer_shifts[$signup->shift_index];
-            }
-
-            // Format dates and times
-            $formatted_event_date = '';
-            if (!empty($event_date)) {
-                $formatted_event_date = date_i18n(get_option('date_format'), strtotime($event_date));
-            }
-
-            $shift_date_time = '';
-            if (!empty($shift_details['date'])) {
-                $shift_date = date_i18n(get_option('date_format'), strtotime($shift_details['date']));
-                $time_parts = array();
-                
-                if (!empty($shift_details['start_time'])) {
-                    $time_parts[] = date_i18n(get_option('time_format'), strtotime($shift_details['date'] . ' ' . $shift_details['start_time']));
-                }
-                if (!empty($shift_details['end_time'])) {
-                    $time_parts[] = date_i18n(get_option('time_format'), strtotime($shift_details['date'] . ' ' . $shift_details['end_time']));
-                }
-                
-                $shift_date_time = $shift_date;
-                if (!empty($time_parts)) {
-                    $shift_date_time .= ' ' . implode(' - ', $time_parts);
-                }
-            }
-
-            $formatted_signup_date = date_i18n(get_option('date_format') . ' ' . get_option('time_format'), strtotime($signup->signup_date));
-
-            $upcoming_shifts[] = array(
-                'event_id' => $signup->event_id,
-                'event_title' => $signup->event_title,
-                'event_location' => $event_location,
-                'shift_title' => $signup->shift_title,
-                'shift_date_time' => $shift_date_time,
-                'volunteer_notes' => $signup->volunteer_notes,
-                'status' => $signup->status,
-                'formatted_event_date' => $formatted_event_date,
-                'formatted_signup_date' => $formatted_signup_date,
-                'signup_date' => $signup->signup_date
-            );
-        }
-
-        // Sort by event date if available, otherwise by signup date
-        usort($upcoming_shifts, function($a, $b) {
-            $date_a = !empty($a['shift_date_time']) ? strtotime($a['shift_date_time']) : strtotime($a['signup_date']);
-            $date_b = !empty($b['shift_date_time']) ? strtotime($b['shift_date_time']) : strtotime($b['signup_date']);
-            return $date_a - $date_b;
-        });
-
-        return $upcoming_shifts;
     }
 
     /**

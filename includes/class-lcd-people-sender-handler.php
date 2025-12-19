@@ -551,6 +551,259 @@ class LCD_People_Sender_Handler {
         return $results;
     }
 
+    // ===========================================
+    // TRANSACTIONAL EMAIL METHODS
+    // ===========================================
+
+    /**
+     * Last email error for debugging
+     * @var string|null
+     */
+    private $last_email_error = null;
+
+    /**
+     * Check if Sender.net transactional emails are enabled
+     * 
+     * @return bool
+     */
+    public function is_transactional_enabled() {
+        $token = get_option('lcd_people_sender_token');
+        $settings = get_option('lcd_people_email_settings', array());
+        $enabled = isset($settings['sender_transactional_enabled']) ? $settings['sender_transactional_enabled'] : 0;
+        return !empty($token) && $enabled;
+    }
+
+    /**
+     * Send transactional email using Sender.net Transactional Campaigns API
+     * 
+     * @param string $to_email Recipient email address
+     * @param string $campaign_id Transactional campaign ID from Sender.net
+     * @param array $params Merge parameters for the template
+     * @param string $from_name Optional sender name
+     * @param string $from_email Optional sender email
+     * @return bool Success status
+     */
+    public function send_transactional_email($to_email, $campaign_id, $params = [], $from_name = '', $from_email = '') {
+        if (!$this->is_transactional_enabled()) {
+            $this->set_last_email_error(__('Sender.net transactional emails are not enabled.', 'lcd-people'));
+            return false;
+        }
+
+        $token = get_option('lcd_people_sender_token');
+        
+        if (empty($token) || empty($campaign_id) || empty($to_email)) {
+            $error = 'Sender.net: Missing required parameters - API Token: ' . (empty($token) ? 'missing' : 'present') . 
+                     ', Campaign ID: ' . (empty($campaign_id) ? 'missing' : 'present') . 
+                     ', Email: ' . (empty($to_email) ? 'missing' : 'present');
+            $this->set_last_email_error($error);
+            return false;
+        }
+
+        // Validate email
+        if (!filter_var($to_email, FILTER_VALIDATE_EMAIL)) {
+            $this->set_last_email_error(__('Invalid recipient email address', 'lcd-people'));
+            return false;
+        }
+
+        // Build the request payload per Sender.net API docs
+        // See: https://api.sender.net/v2/message/{id}/send
+        $payload = array(
+            'recipient_email' => $to_email
+        );
+
+        // Add params/personalization if provided (for template variables)
+        if (!empty($params)) {
+            $payload['params'] = $params;
+        }
+
+        // Add attachments placeholder (not currently used but supported by API)
+        // $payload['attachments'] = array();
+
+        // Make the API request
+        // Note: campaign_id is the message template ID from Sender.net
+        $url = 'https://api.sender.net/v2/message/' . urlencode($campaign_id) . '/send';
+        
+        $response = wp_remote_post($url, array(
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Content-Type' => 'application/json',
+                'Accept' => 'application/json'
+            ),
+            'body' => json_encode($payload),
+            'timeout' => 30
+        ));
+
+        if (is_wp_error($response)) {
+            $this->set_last_email_error(__('Sender.net API Connection Error: ', 'lcd-people') . $response->get_error_message());
+            return false;
+        }
+
+        $response_code = wp_remote_retrieve_response_code($response);
+        $body = wp_remote_retrieve_body($response);
+
+        // Check for success (2xx response codes)
+        if ($response_code >= 200 && $response_code < 300) {
+            return true;
+        }
+
+        // Handle error responses
+        $this->handle_transactional_api_error($response_code, $body);
+        return false;
+    }
+
+    /**
+     * Send HTML email using Sender.net
+     * Falls back to wp_mail if Sender.net is not available
+     * 
+     * @param string $to_email Recipient email address
+     * @param string $subject Email subject
+     * @param string $html_body HTML content of the email
+     * @param string $from_name Optional sender name
+     * @param string $from_email Optional sender email
+     * @param string $reply_to Optional reply-to email
+     * @return bool Success status
+     */
+    public function send_html_email($to_email, $subject, $html_body, $from_name = '', $from_email = '', $reply_to = '') {
+        // For HTML emails, we use wp_mail as Sender.net transactional API is template-based
+        // This method provides a fallback when templates aren't available
+        
+        $site_name = get_bloginfo('name');
+        $admin_email = get_option('admin_email');
+        
+        $from_name = $from_name ?: $site_name;
+        $from_email = $from_email ?: $admin_email;
+        $reply_to = $reply_to ?: $from_email;
+
+        $headers = array(
+            'Content-Type: text/html; charset=UTF-8',
+            'From: ' . $from_name . ' <' . $from_email . '>',
+            'Reply-To: ' . $reply_to
+        );
+
+        $result = wp_mail($to_email, $subject, $html_body, $headers);
+        
+        if (!$result) {
+            $this->set_last_email_error(__('Failed to send email via wp_mail', 'lcd-people'));
+        }
+        
+        return $result;
+    }
+
+    /**
+     * Test Sender.net transactional email connection
+     * 
+     * @param string $campaign_id Campaign ID to test
+     * @param string $test_email Email address to send test to
+     * @return bool|WP_Error True on success, WP_Error on failure
+     */
+    public function test_transactional_connection($campaign_id, $test_email) {
+        $token = get_option('lcd_people_sender_token');
+        
+        if (empty($token)) {
+            return new WP_Error('missing_token', __('Sender.net API token is required', 'lcd-people'));
+        }
+
+        if (empty($campaign_id)) {
+            return new WP_Error('missing_campaign', __('Transactional campaign ID is required', 'lcd-people'));
+        }
+
+        if (empty($test_email) || !filter_var($test_email, FILTER_VALIDATE_EMAIL)) {
+            return new WP_Error('invalid_email', __('Valid test email address is required', 'lcd-people'));
+        }
+
+        // Send test email with sample data
+        $test_params = array(
+            'first_name' => 'Test',
+            'last_name' => 'User',
+            'name' => 'Test User',
+            'email' => $test_email,
+            'site_name' => get_bloginfo('name'),
+            'site_url' => home_url(),
+            'login_url' => wp_login_url(),
+            'reset_password_url' => wp_lostpassword_url(),
+            'create_account_url' => home_url('/claim-account?token=test-token-' . time()),
+            'membership_status' => 'Active',
+            'token_expiry_hours' => '24'
+        );
+
+        $result = $this->send_transactional_email($test_email, $campaign_id, $test_params);
+
+        if ($result) {
+            return true;
+        }
+
+        $error = $this->get_last_email_error();
+        return new WP_Error('send_failed', $error ?: __('Failed to send test email', 'lcd-people'));
+    }
+
+    /**
+     * Get the last email error
+     * 
+     * @return string|null
+     */
+    public function get_last_email_error() {
+        return $this->last_email_error;
+    }
+
+    /**
+     * Set the last email error
+     * 
+     * @param string $error Error message
+     */
+    private function set_last_email_error($error) {
+        $this->last_email_error = $error;
+        error_log('LCD People Sender Email Error: ' . $error);
+    }
+
+    /**
+     * Handle transactional API error responses
+     * 
+     * @param int $response_code HTTP response code
+     * @param string $body Response body
+     */
+    private function handle_transactional_api_error($response_code, $body) {
+        $data = json_decode($body, true);
+        $error_message = __('Unknown error', 'lcd-people');
+
+        if (is_array($data)) {
+            if (isset($data['message'])) {
+                $error_message = $data['message'];
+            } elseif (isset($data['error'])) {
+                $error_message = is_string($data['error']) ? $data['error'] : json_encode($data['error']);
+            }
+        }
+
+        // Build comprehensive error message
+        $full_error = sprintf(__('Sender.net API Error (%d): %s', 'lcd-people'), $response_code, $error_message);
+
+        // Add specific guidance based on error code
+        switch ($response_code) {
+            case 400:
+                $full_error .= ' - ' . __('Bad Request: Check campaign ID and payload format', 'lcd-people');
+                break;
+            case 401:
+                $full_error .= ' - ' . __('Authentication failed: Verify your API token is correct', 'lcd-people');
+                break;
+            case 403:
+                $full_error .= ' - ' . __('Forbidden: Check API permissions', 'lcd-people');
+                break;
+            case 404:
+                $full_error .= ' - ' . __('Not Found: Transactional campaign ID may be invalid', 'lcd-people');
+                break;
+            case 422:
+                $full_error .= ' - ' . __('Validation Error: Check all required fields', 'lcd-people');
+                break;
+            case 429:
+                $full_error .= ' - ' . __('Rate Limited: Too many requests, try again later', 'lcd-people');
+                break;
+            case 500:
+                $full_error .= ' - ' . __('Server Error: Sender.net service issue, try again later', 'lcd-people');
+                break;
+        }
+
+        $this->set_last_email_error($full_error);
+    }
+
     /**
      * Add sync record to person
      * 
