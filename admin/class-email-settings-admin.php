@@ -1311,5 +1311,113 @@ class LCD_Email_Settings_Admin {
 
         return $templates[$type] ?? '';
     }
+
+    // ===========================================
+    // EMAIL SENDING METHODS
+    // ===========================================
+
+    /**
+     * Check if Sender.net transactional emails are enabled
+     */
+    public function is_sender_transactional_enabled() {
+        $token = get_option('lcd_people_sender_token');
+        $options = get_option('lcd_people_email_settings', array());
+        $enabled = isset($options['sender_transactional_enabled']) ? $options['sender_transactional_enabled'] : 0;
+        return !empty($token) && $enabled;
+    }
+
+    /**
+     * Get token expiry time from settings
+     */
+    public function get_token_expiry_hours() {
+        $options = get_option('lcd_people_email_settings', array());
+        return isset($options['token_expiry_hours']) ? $options['token_expiry_hours'] : 24;
+    }
+
+    /**
+     * Send an email using the configured templates
+     */
+    public function send_people_email($email_type, $recipient_email, $template_vars = array()) {
+        $options = get_option('lcd_people_email_settings', array());
+        
+        // Check if this email type is enabled
+        $enabled = isset($options[$email_type . '_enabled']) ? $options[$email_type . '_enabled'] : 1;
+        if (!$enabled) {
+            return false; // Email type disabled
+        }
+        
+        // Try Sender.net first if enabled and configured
+        if ($this->is_sender_transactional_enabled()) {
+            $campaign_id = isset($options['sender_campaigns'][$email_type]) ? $options['sender_campaigns'][$email_type] : '';
+            
+            if (!empty($campaign_id)) {
+                $sender_handler = $this->get_sender_handler();
+                if ($sender_handler) {
+                    try {
+                        $result = $sender_handler->send_transactional_email(
+                            $recipient_email,
+                            $campaign_id,
+                            $template_vars
+                        );
+                        
+                        if ($result) {
+                            return true;
+                        }
+                        
+                        error_log('LCD People: Sender.net error for ' . $email_type . ': ' . $sender_handler->get_last_email_error());
+                        // Fall back to WP Mail
+                    } catch (Exception $e) {
+                        error_log('LCD People: Sender.net exception for ' . $email_type . ': ' . $e->getMessage());
+                        // Fall back to WP Mail
+                    }
+                }
+            }
+        }
+        
+        // Use WP Mail as fallback
+        $subject = '';
+        $content = '';
+        
+        if (isset($options['wpmail_templates'][$email_type])) {
+            $subject = $options['wpmail_templates'][$email_type]['subject'] ?? '';
+            $content = $options['wpmail_templates'][$email_type]['content'] ?? '';
+        }
+        
+        // If no template is configured, use default
+        if (empty($subject) && empty($content)) {
+            $default_template = $this->get_default_template($email_type);
+            $lines = explode("\n", $default_template);
+            foreach ($lines as $line) {
+                if (strpos($line, 'Subject:') === 0) {
+                    $subject = trim(substr($line, 8));
+                    break;
+                }
+            }
+            $content = trim(str_replace('Subject: ' . $subject . "\n", '', $default_template));
+        }
+        
+        if (empty($subject)) {
+            return false;
+        }
+        
+        // Replace template variables
+        foreach ($template_vars as $key => $value) {
+            $subject = str_replace('{{' . $key . '}}', $value, $subject);
+            $content = str_replace('{{' . $key . '}}', $value, $content);
+        }
+        
+        $site_name = get_bloginfo('name');
+        $from_email = get_option('admin_email');
+        
+        return wp_mail(
+            $recipient_email,
+            $subject,
+            $content,
+            array(
+                'From: ' . $site_name . ' <' . $from_email . '>',
+                'Content-Type: text/plain; charset=UTF-8'
+            )
+        );
+    }
 }
 

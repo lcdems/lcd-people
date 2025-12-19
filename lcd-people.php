@@ -20,7 +20,6 @@ require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-actblue-hand
 require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-sender-handler.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-callhub-handler.php';
 require_once plugin_dir_path(__FILE__) . 'includes/class-lcd-people-optin-handler.php';
-require_once plugin_dir_path(__FILE__) . 'admin/class-people-email-admin.php';
 require_once plugin_dir_path(__FILE__) . 'admin/class-email-settings-admin.php';
 
 class LCD_People {
@@ -65,11 +64,9 @@ class LCD_People {
         // Initialize Opt-in handler
         $this->optin_handler = new LCD_People_Optin_Handler($this);
         
-        // Initialize Email Admin (only in admin)
+        // Initialize Email Settings Admin (only in admin)
         if (is_admin()) {
-            $this->email_admin = LCD_People_Email_Admin::get_instance($this);
-            // Initialize new consolidated email settings admin
-            LCD_Email_Settings_Admin::get_instance($this);
+            $this->email_admin = LCD_Email_Settings_Admin::get_instance($this);
         }
         
         add_action('init', array($this, 'register_post_type'));
@@ -3074,8 +3071,8 @@ class LCD_People {
      * Get email admin instance
      */
     public function get_email_admin() {
-        if (!$this->email_admin && is_admin()) {
-            $this->email_admin = LCD_People_Email_Admin::get_instance($this);
+        if (!$this->email_admin) {
+            $this->email_admin = LCD_Email_Settings_Admin::get_instance($this);
         }
         return $this->email_admin;
     }
