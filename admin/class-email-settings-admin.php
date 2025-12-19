@@ -33,6 +33,9 @@ class LCD_Email_Settings_Admin {
     private function __construct($plugin_instance) {
         $this->plugin_instance = $plugin_instance;
         
+        // Ensure options exist with defaults
+        $this->maybe_initialize_options();
+        
         // Add menu pages
         add_action('admin_menu', array($this, 'add_menu_pages'), 9);
         
@@ -47,6 +50,28 @@ class LCD_Email_Settings_Admin {
         add_action('wp_ajax_lcd_email_test_template', array($this, 'ajax_test_template'));
         add_action('wp_ajax_lcd_email_test_wpmail', array($this, 'ajax_test_wpmail'));
         add_action('wp_ajax_lcd_email_refresh_groups', array($this, 'ajax_refresh_groups'));
+    }
+
+    /**
+     * Ensure options exist in database with proper defaults
+     */
+    private function maybe_initialize_options() {
+        // Check if lcd_people_email_settings exists
+        $existing = get_option('lcd_people_email_settings');
+        
+        if ($existing === false) {
+            // Option doesn't exist - create it with defaults
+            $defaults = array(
+                'sender_transactional_enabled' => 0,
+                'claim_existing_user_enabled' => 1,
+                'claim_create_account_enabled' => 1,
+                'claim_no_records_enabled' => 1,
+                'token_expiry_hours' => 24,
+                'sender_campaigns' => array(),
+                'wpmail_templates' => array()
+            );
+            add_option('lcd_people_email_settings', $defaults, '', 'yes');
+        }
     }
 
     /**
