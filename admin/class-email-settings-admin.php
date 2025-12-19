@@ -56,21 +56,29 @@ class LCD_Email_Settings_Admin {
      * Ensure options exist in database with proper defaults
      */
     private function maybe_initialize_options() {
-        // Check if lcd_people_email_settings exists
+        // Check if lcd_people_email_settings exists and has values
         $existing = get_option('lcd_people_email_settings');
+        
+        $defaults = array(
+            'sender_transactional_enabled' => 0,
+            'claim_existing_user_enabled' => 1,
+            'claim_create_account_enabled' => 1,
+            'claim_no_records_enabled' => 1,
+            'token_expiry_hours' => 24,
+            'sender_campaigns' => array(),
+            'wpmail_templates' => array()
+        );
         
         if ($existing === false) {
             // Option doesn't exist - create it with defaults
-            $defaults = array(
-                'sender_transactional_enabled' => 0,
-                'claim_existing_user_enabled' => 1,
-                'claim_create_account_enabled' => 1,
-                'claim_no_records_enabled' => 1,
-                'token_expiry_hours' => 24,
-                'sender_campaigns' => array(),
-                'wpmail_templates' => array()
-            );
             add_option('lcd_people_email_settings', $defaults, '', 'yes');
+        } elseif (empty($existing) || !is_array($existing)) {
+            // Option exists but is empty or corrupted - update with defaults
+            update_option('lcd_people_email_settings', $defaults);
+        } elseif (!isset($existing['sender_transactional_enabled'])) {
+            // Option exists but missing key fields - merge with defaults
+            $merged = array_merge($defaults, $existing);
+            update_option('lcd_people_email_settings', $merged);
         }
     }
 
