@@ -608,16 +608,26 @@ class LCD_People_Sender_Handler {
         // Build the request payload per Sender.net API docs
         // See: https://api.sender.net/v2/message/{id}/send
         $payload = array(
-            'recipient_email' => $to_email
+            'to' => array(
+                'email' => $to_email
+            )
         );
 
-        // Add params/personalization if provided (for template variables)
-        if (!empty($params)) {
-            $payload['params'] = $params;
+        // Add recipient name if available in params
+        if (!empty($params['name'])) {
+            $payload['to']['name'] = $params['name'];
+        } elseif (!empty($params['first_name'])) {
+            $name = $params['first_name'];
+            if (!empty($params['last_name'])) {
+                $name .= ' ' . $params['last_name'];
+            }
+            $payload['to']['name'] = $name;
         }
 
-        // Add attachments placeholder (not currently used but supported by API)
-        // $payload['attachments'] = array();
+        // Add template variables (personalization)
+        if (!empty($params)) {
+            $payload['variables'] = $params;
+        }
 
         // Make the API request
         // Note: campaign_id is the message template ID from Sender.net
