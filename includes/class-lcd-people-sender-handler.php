@@ -574,16 +574,19 @@ class LCD_People_Sender_Handler {
     }
 
     /**
-     * Send transactional email using Sender.net Transactional Campaigns API
+     * Send transactional email using Sender.net Transactional Messages API
+     * 
+     * Uses the template ID directly with /v2/message/{id}/send endpoint.
+     * The template_id is the ID of a "Transactional Template" created in the Sender.net UI.
      * 
      * @param string $to_email Recipient email address
-     * @param string $campaign_id Transactional campaign ID from Sender.net
-     * @param array $params Merge parameters for the template
-     * @param string $from_name Optional sender name
-     * @param string $from_email Optional sender email
+     * @param string $template_id Template ID from Sender.net UI (the transactional template ID)
+     * @param array $params Merge parameters/variables for the template
+     * @param string $from_name Optional sender name (not used by Sender.net API but kept for interface compatibility)
+     * @param string $from_email Optional sender email (not used by Sender.net API but kept for interface compatibility)
      * @return bool Success status
      */
-    public function send_transactional_email($to_email, $campaign_id, $params = [], $from_name = '', $from_email = '') {
+    public function send_transactional_email($to_email, $template_id, $params = [], $from_name = '', $from_email = '') {
         if (!$this->is_transactional_enabled()) {
             $this->set_last_email_error(__('Sender.net transactional emails are not enabled.', 'lcd-people'));
             return false;
@@ -591,9 +594,9 @@ class LCD_People_Sender_Handler {
 
         $token = get_option('lcd_people_sender_token');
         
-        if (empty($token) || empty($campaign_id) || empty($to_email)) {
+        if (empty($token) || empty($template_id) || empty($to_email)) {
             $error = 'Sender.net: Missing required parameters - API Token: ' . (empty($token) ? 'missing' : 'present') . 
-                     ', Campaign ID: ' . (empty($campaign_id) ? 'missing' : 'present') . 
+                     ', Template ID: ' . (empty($template_id) ? 'missing' : 'present') . 
                      ', Email: ' . (empty($to_email) ? 'missing' : 'present');
             $this->set_last_email_error($error);
             return false;
@@ -605,8 +608,11 @@ class LCD_People_Sender_Handler {
             return false;
         }
 
-        // Build the request payload per Sender.net API docs
-        // See: https://api.sender.net/v2/message/{id}/send
+        // The template_id from Sender.net UI IS the message ID for the /v2/message/{id}/send endpoint
+        // We don't need to create a campaign - the transactional template is the "message"
+        $message_id = $template_id;
+
+        // Build the request payload for sending
         $payload = array(
             'to' => array(
                 'email' => $to_email
@@ -629,9 +635,8 @@ class LCD_People_Sender_Handler {
             $payload['variables'] = $params;
         }
 
-        // Make the API request
-        // Note: campaign_id is the message template ID from Sender.net
-        $url = 'https://api.sender.net/v2/message/' . urlencode($campaign_id) . '/send';
+        // Make the API request to send using the transactional message/template
+        $url = 'https://api.sender.net/v2/message/' . urlencode($message_id) . '/send';
         
         $response = wp_remote_post($url, array(
             'headers' => array(
@@ -651,9 +656,18 @@ class LCD_People_Sender_Handler {
         $response_code = wp_remote_retrieve_response_code($response);
         $body = wp_remote_retrieve_body($response);
 
+        // Log response for debugging
+        error_log('Sender.net Send Email Response - Code: ' . $response_code . ', Body: ' . $body);
+
         // Check for success (2xx response codes)
         if ($response_code >= 200 && $response_code < 300) {
             return true;
+        }
+
+        // If we get a 404, the message/template ID is invalid
+        if ($response_code === 404) {
+            error_log('Sender.net: Message/template not found. Template ID: ' . $template_id);
+            error_log('Sender.net: Make sure you are using the correct template ID from the Sender.net UI');
         }
 
         // Handle error responses
@@ -702,19 +716,19 @@ class LCD_People_Sender_Handler {
     /**
      * Test Sender.net transactional email connection
      * 
-     * @param string $campaign_id Campaign ID to test
+     * @param string $template_id Template ID to test
      * @param string $test_email Email address to send test to
      * @return bool|WP_Error True on success, WP_Error on failure
      */
-    public function test_transactional_connection($campaign_id, $test_email) {
+    public function test_transactional_connection($template_id, $test_email) {
         $token = get_option('lcd_people_sender_token');
         
         if (empty($token)) {
             return new WP_Error('missing_token', __('Sender.net API token is required', 'lcd-people'));
         }
 
-        if (empty($campaign_id)) {
-            return new WP_Error('missing_campaign', __('Transactional campaign ID is required', 'lcd-people'));
+        if (empty($template_id)) {
+            return new WP_Error('missing_template', __('Template ID is required', 'lcd-people'));
         }
 
         if (empty($test_email) || !filter_var($test_email, FILTER_VALIDATE_EMAIL)) {
@@ -736,7 +750,7 @@ class LCD_People_Sender_Handler {
             'token_expiry_hours' => '24'
         );
 
-        $result = $this->send_transactional_email($test_email, $campaign_id, $test_params);
+        $result = $this->send_transactional_email($test_email, $template_id, $test_params);
 
         if ($result) {
             return true;
@@ -789,7 +803,7 @@ class LCD_People_Sender_Handler {
         // Add specific guidance based on error code
         switch ($response_code) {
             case 400:
-                $full_error .= ' - ' . __('Bad Request: Check campaign ID and payload format', 'lcd-people');
+                $full_error .= ' - ' . __('Bad Request: Check template ID and payload format', 'lcd-people');
                 break;
             case 401:
                 $full_error .= ' - ' . __('Authentication failed: Verify your API token is correct', 'lcd-people');
@@ -798,7 +812,7 @@ class LCD_People_Sender_Handler {
                 $full_error .= ' - ' . __('Forbidden: Check API permissions', 'lcd-people');
                 break;
             case 404:
-                $full_error .= ' - ' . __('Not Found: Transactional campaign ID may be invalid', 'lcd-people');
+                $full_error .= ' - ' . __('Not Found: Template or campaign ID may be invalid', 'lcd-people');
                 break;
             case 422:
                 $full_error .= ' - ' . __('Validation Error: Check all required fields', 'lcd-people');
@@ -843,4 +857,4 @@ class LCD_People_Sender_Handler {
 
         update_post_meta($person_id, '_lcd_person_sync_records', $sync_records);
     }
-} 
+}
