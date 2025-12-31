@@ -212,8 +212,10 @@
                             
                             groupsContainer.append(checkbox);
                         });
+                        groupsContainer.closest('.subscription-form-group').show();
                     } else {
-                        groupsContainer.append('<p class="description">No subscription groups available.</p>');
+                        // Hide the entire Email Interests section when no groups are available
+                        groupsContainer.closest('.subscription-form-group').hide();
                     }
                     
                     // Update SMS section based on opt-in status

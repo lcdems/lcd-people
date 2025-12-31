@@ -510,7 +510,7 @@ class LCD_People_Frontend {
                                 <?php _e('Update Preferences', 'lcd-people'); ?>
                             </button>
                             <button type="button" id="unsubscribe-all-btn" class="lcd-btn lcd-btn-danger">
-                                <?php _e('Unsubscribe from All', 'lcd-people'); ?>
+                                <?php _e('Unsubscribe from All Emails', 'lcd-people'); ?>
                             </button>
                         </div>
                     </form>

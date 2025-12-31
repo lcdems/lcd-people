@@ -22,6 +22,7 @@ class LCD_Email_Settings_Admin {
     const SENDER_CONFIG_SLUG = 'lcd-email-sender-config';
     const OPTIN_SETTINGS_SLUG = 'lcd-email-optin-settings';
     const TEMPLATES_SLUG = 'lcd-email-templates';
+    const SMS_SETTINGS_SLUG = 'lcd-email-sms-settings';
 
     public static function get_instance($plugin_instance = null) {
         if (null === self::$instance) {
@@ -125,6 +126,16 @@ class LCD_Email_Settings_Admin {
             'manage_options',
             self::TEMPLATES_SLUG,
             array($this, 'render_templates_page')
+        );
+
+        // SMS/CallHub Settings
+        add_submenu_page(
+            self::MENU_SLUG,
+            __('SMS Settings (CallHub)', 'lcd-people'),
+            __('SMS Settings', 'lcd-people'),
+            'manage_options',
+            self::SMS_SETTINGS_SLUG,
+            array($this, 'render_sms_settings_page')
         );
     }
 
@@ -394,6 +405,97 @@ class LCD_Email_Settings_Admin {
             self::TEMPLATES_SLUG,
             'lcd_email_controls_section'
         );
+
+        // ===========================================
+        // SMS/CALLHUB SETTINGS PAGE
+        // ===========================================
+        register_setting('lcd_email_sms_settings', 'lcd_people_callhub_api_domain', array(
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => ''
+        ));
+
+        register_setting('lcd_email_sms_settings', 'lcd_people_callhub_api_key', array(
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => ''
+        ));
+
+        register_setting('lcd_email_sms_settings', 'lcd_people_callhub_sms_tags', array(
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => ''
+        ));
+
+        register_setting('lcd_email_sms_settings', 'lcd_people_callhub_dnc_list_name', array(
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => ''
+        ));
+
+        // SMS Settings - CallHub API Section
+        add_settings_section(
+            'lcd_email_callhub_api_section',
+            __('CallHub API Configuration', 'lcd-people'),
+            array($this, 'render_callhub_api_section'),
+            self::SMS_SETTINGS_SLUG
+        );
+
+        add_settings_field(
+            'lcd_people_callhub_api_domain',
+            __('API Domain', 'lcd-people'),
+            array($this, 'render_callhub_api_domain_field'),
+            self::SMS_SETTINGS_SLUG,
+            'lcd_email_callhub_api_section'
+        );
+
+        add_settings_field(
+            'lcd_people_callhub_api_key',
+            __('API Key', 'lcd-people'),
+            array($this, 'render_callhub_api_key_field'),
+            self::SMS_SETTINGS_SLUG,
+            'lcd_email_callhub_api_section'
+        );
+
+        // SMS Settings - Tags & Lists Section
+        add_settings_section(
+            'lcd_email_callhub_tags_section',
+            __('SMS Tags & Lists', 'lcd-people'),
+            array($this, 'render_callhub_tags_section'),
+            self::SMS_SETTINGS_SLUG
+        );
+
+        add_settings_field(
+            'lcd_people_callhub_sms_tags',
+            __('SMS Opt-In Tag IDs', 'lcd-people'),
+            array($this, 'render_callhub_sms_tags_field'),
+            self::SMS_SETTINGS_SLUG,
+            'lcd_email_callhub_tags_section'
+        );
+
+        add_settings_field(
+            'lcd_people_callhub_dnc_list_name',
+            __('DNC List Name', 'lcd-people'),
+            array($this, 'render_callhub_dnc_list_name_field'),
+            self::SMS_SETTINGS_SLUG,
+            'lcd_email_callhub_tags_section'
+        );
+
+        // SMS Settings - Webhook Section
+        add_settings_section(
+            'lcd_email_callhub_webhook_section',
+            __('Webhook Integration', 'lcd-people'),
+            array($this, 'render_callhub_webhook_section'),
+            self::SMS_SETTINGS_SLUG
+        );
+
+        add_settings_field(
+            'lcd_people_callhub_webhook_url',
+            __('Webhook URL', 'lcd-people'),
+            array($this, 'render_callhub_webhook_url_field'),
+            self::SMS_SETTINGS_SLUG,
+            'lcd_email_callhub_webhook_section'
+        );
     }
 
     /**
@@ -426,7 +528,8 @@ class LCD_Email_Settings_Admin {
         $our_pages = array(
             'toplevel_page_' . self::MENU_SLUG,
             'email-settings_page_' . self::OPTIN_SETTINGS_SLUG,
-            'email-settings_page_' . self::TEMPLATES_SLUG
+            'email-settings_page_' . self::TEMPLATES_SLUG,
+            'email-settings_page_' . self::SMS_SETTINGS_SLUG
         );
 
         if (!in_array($hook, $our_pages)) {
@@ -648,6 +751,154 @@ class LCD_Email_Settings_Admin {
                 submit_button();
                 ?>
             </form>
+            
+            <?php $this->render_shortcode_documentation(); ?>
+        </div>
+        <?php
+    }
+
+    /**
+     * Render SMS Settings page
+     */
+    public function render_sms_settings_page() {
+        ?>
+        <div class="wrap">
+            <h1><?php _e('SMS Settings (CallHub)', 'lcd-people'); ?></h1>
+            
+            <?php $this->render_callhub_connection_status(); ?>
+            
+            <form method="post" action="options.php">
+                <?php
+                settings_fields('lcd_email_sms_settings');
+                do_settings_sections(self::SMS_SETTINGS_SLUG);
+                submit_button();
+                ?>
+            </form>
+        </div>
+        <?php
+    }
+
+    /**
+     * Render CallHub connection status
+     */
+    private function render_callhub_connection_status() {
+        $api_key = get_option('lcd_people_callhub_api_key');
+        ?>
+        <div class="card" style="max-width: 600px; margin-bottom: 20px;">
+            <h2><?php _e('Connection Status', 'lcd-people'); ?></h2>
+            <?php if (!empty($api_key)) : ?>
+                <p style="color: #46b450;">
+                    <span class="dashicons dashicons-yes-alt"></span>
+                    <?php _e('API Key configured', 'lcd-people'); ?>
+                </p>
+                <?php $this->render_callhub_connection_test_result(); ?>
+            <?php else : ?>
+                <p style="color: #dc3232;">
+                    <span class="dashicons dashicons-warning"></span>
+                    <?php _e('API Key not configured', 'lcd-people'); ?>
+                </p>
+            <?php endif; ?>
+        </div>
+        <?php
+    }
+
+    /**
+     * Render CallHub connection test result
+     */
+    private function render_callhub_connection_test_result() {
+        if (!class_exists('LCD_People_CallHub_Handler')) {
+            return;
+        }
+        
+        $handler = new LCD_People_CallHub_Handler($this->plugin_instance);
+        $result = $handler->test_connection();
+        
+        if ($result['success']) {
+            ?>
+            <p style="color: #00a32a;">
+                <span class="dashicons dashicons-yes-alt"></span>
+                <?php echo esc_html($result['message']); ?>
+            </p>
+            <?php
+        } else {
+            ?>
+            <p style="color: #d63638;">
+                <span class="dashicons dashicons-warning"></span>
+                <?php echo esc_html($result['message']); ?>
+            </p>
+            <?php
+        }
+    }
+
+    /**
+     * Render shortcode documentation
+     */
+    private function render_shortcode_documentation() {
+        ?>
+        <div style="background: #f0f0f1; padding: 15px; border-left: 4px solid #646970; margin-top: 20px; max-width: 800px;">
+            <h3><?php _e('Using the Opt-in Form', 'lcd-people'); ?></h3>
+            <p><?php _e('Once configured above, you can use the opt-in form in the following ways:', 'lcd-people'); ?></p>
+            <ul style="margin-left: 20px; list-style: disc;">
+                <li><strong><?php _e('Shortcode:', 'lcd-people'); ?></strong> <code>[lcd_optin_form]</code> - <?php _e('Embed the form directly on any page or post', 'lcd-people'); ?></li>
+                <li><strong><?php _e('Modal Trigger:', 'lcd-people'); ?></strong> <code>&lt;button data-modal="optin-form"&gt;Join Our List&lt;/button&gt;</code> - <?php _e('Open the form in a modal', 'lcd-people'); ?></li>
+                <li><strong><?php _e('JavaScript:', 'lcd-people'); ?></strong> <code>LCDModal.open({type: 'optin-form'})</code> - <?php _e('Trigger programmatically', 'lcd-people'); ?></li>
+            </ul>
+            
+            <h4><?php _e('Shortcode Parameters', 'lcd-people'); ?></h4>
+            <p><?php _e('Customize the form with these optional parameters:', 'lcd-people'); ?></p>
+            <table class="widefat" style="max-width: 700px;">
+                <thead>
+                    <tr>
+                        <th><?php _e('Parameter', 'lcd-people'); ?></th>
+                        <th><?php _e('Description', 'lcd-people'); ?></th>
+                        <th><?php _e('Default', 'lcd-people'); ?></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><code>title</code></td>
+                        <td><?php _e('Form title (hidden by default)', 'lcd-people'); ?></td>
+                        <td><em><?php _e('none', 'lcd-people'); ?></em></td>
+                    </tr>
+                    <tr>
+                        <td><code>cta</code></td>
+                        <td><?php _e('Submit button text', 'lcd-people'); ?></td>
+                        <td>"Sign Up"</td>
+                    </tr>
+                    <tr>
+                        <td><code>sender_groups</code></td>
+                        <td><?php _e('Comma-separated Sender.net group IDs to add', 'lcd-people'); ?></td>
+                        <td><em><?php _e('none', 'lcd-people'); ?></em></td>
+                    </tr>
+                    <tr>
+                        <td><code>callhub_tags</code></td>
+                        <td><?php _e('Comma-separated CallHub tag IDs to add', 'lcd-people'); ?></td>
+                        <td><em><?php _e('none', 'lcd-people'); ?></em></td>
+                    </tr>
+                </tbody>
+            </table>
+            
+            <h4 style="margin-top: 15px;"><?php _e('Examples', 'lcd-people'); ?></h4>
+            <ul style="margin-left: 20px; list-style: disc;">
+                <li><code>[lcd_optin_form]</code> - <?php _e('Basic form with no title', 'lcd-people'); ?></li>
+                <li><code>[lcd_optin_form title="Join Our Newsletter" cta="Subscribe"]</code> - <?php _e('Custom title and button', 'lcd-people'); ?></li>
+                <li><code>[lcd_optin_form sender_groups="abc123" callhub_tags="tag1,tag2"]</code> - <?php _e('With extra groups/tags', 'lcd-people'); ?></li>
+            </ul>
+            
+            <p class="description" style="margin-top: 15px;">
+                <?php _e('The form will display groups in the order configured above, with default selections pre-checked. Email and SMS auto-add groups will be automatically assigned based on user selections.', 'lcd-people'); ?>
+            </p>
+            
+            <?php if (get_option('lcd_people_optin_google_gtag_id') || get_option('lcd_people_optin_facebook_pixel_id')): ?>
+            <div style="margin-top: 15px; padding: 10px; background: #d1ecf1; border-left: 4px solid #bee5eb;">
+                <h4 style="margin-top: 0;"><?php _e('Conversion Tracking Active', 'lcd-people'); ?></h4>
+                <p style="margin-bottom: 0;"><?php _e('Conversion events will be automatically fired when users complete the opt-in process:', 'lcd-people'); ?></p>
+                <ul style="margin: 10px 0 0 20px; list-style: disc;">
+                    <li><strong><?php _e('Email Signup:', 'lcd-people'); ?></strong> <?php _e('Conversion events (Google: conversion, Facebook: CompleteRegistration)', 'lcd-people'); ?></li>
+                    <li><strong><?php _e('SMS Opt-in:', 'lcd-people'); ?></strong> <?php _e('Subscribe events (Google: conversion, Facebook: Subscribe)', 'lcd-people'); ?></li>
+                </ul>
+            </div>
+            <?php endif; ?>
         </div>
         <?php
     }
@@ -773,6 +1024,18 @@ class LCD_Email_Settings_Admin {
 
     public function render_wpmail_section() {
         echo '<p>' . __('WordPress mail templates are used as a fallback when Sender.net is not available.', 'lcd-people') . '</p>';
+    }
+
+    public function render_callhub_api_section() {
+        echo '<p>' . __('Configure CallHub for SMS messaging. When users opt-in to SMS, they will be synced to CallHub as contacts.', 'lcd-people') . '</p>';
+    }
+
+    public function render_callhub_tags_section() {
+        echo '<p>' . __('Configure which tags to apply when users opt-in to SMS, and which DNC list to use for opt-outs.', 'lcd-people') . '</p>';
+    }
+
+    public function render_callhub_webhook_section() {
+        echo '<p>' . __('Configure the webhook to automatically sync SMS opt-outs from CallHub back to your site.', 'lcd-people') . '</p>';
     }
 
     // ===========================================
@@ -949,6 +1212,175 @@ class LCD_Email_Settings_Admin {
         ?>
         <input type="text" name="lcd_people_optin_conversion_value" value="<?php echo esc_attr($value); ?>" class="small-text" placeholder="1.00">
         <p class="description"><?php _e('Optional monetary value for conversion tracking.', 'lcd-people'); ?></p>
+        <?php
+    }
+
+    // ===========================================
+    // FIELD RENDER METHODS - SMS/CALLHUB SETTINGS
+    // ===========================================
+
+    public function render_callhub_api_domain_field() {
+        $value = get_option('lcd_people_callhub_api_domain', '');
+        ?>
+        <input type="text" name="lcd_people_callhub_api_domain" value="<?php echo esc_attr($value); ?>" class="regular-text" placeholder="api.callhub.io">
+        <p class="description">
+            <?php _e('Your CallHub API domain. Find it in CallHub under Settings > API Key (labeled "API Domain").', 'lcd-people'); ?>
+            <br><?php _e('Leave empty to use the default: api.callhub.io', 'lcd-people'); ?>
+        </p>
+        <?php
+    }
+
+    public function render_callhub_api_key_field() {
+        $value = get_option('lcd_people_callhub_api_key', '');
+        ?>
+        <input type="password" name="lcd_people_callhub_api_key" value="<?php echo esc_attr($value); ?>" class="regular-text">
+        <p class="description">
+            <?php _e('Your CallHub API key. Find it in CallHub under Settings > API Key.', 'lcd-people'); ?>
+            <a href="https://developer.callhub.io/" target="_blank"><?php _e('API Documentation', 'lcd-people'); ?></a>
+        </p>
+        <?php
+    }
+
+    public function render_callhub_sms_tags_field() {
+        $value = get_option('lcd_people_callhub_sms_tags', '');
+        ?>
+        <input type="text" name="lcd_people_callhub_sms_tags" value="<?php echo esc_attr($value); ?>" class="regular-text" placeholder="e.g., 12345, 67890">
+        <p class="description">
+            <?php _e('Enter tag IDs to assign to contacts when they opt-in to SMS. Separate multiple IDs with commas.', 'lcd-people'); ?>
+            <br><?php _e('Find tag IDs in CallHub under Settings > Tags - the ID is shown in the tag details or URL.', 'lcd-people'); ?>
+        </p>
+        <?php
+    }
+
+    public function render_callhub_dnc_list_name_field() {
+        $value = get_option('lcd_people_callhub_dnc_list_name', '');
+        ?>
+        <input type="text" name="lcd_people_callhub_dnc_list_name" value="<?php echo esc_attr($value); ?>" class="regular-text" placeholder="e.g., SMS Opt-Out List">
+        <p class="description">
+            <?php _e('The exact name of your CallHub DNC (Do Not Call) list. This must match the list name in CallHub exactly.', 'lcd-people'); ?>
+            <br><?php _e('When users opt out of SMS, their phone numbers will be added to this list.', 'lcd-people'); ?>
+        </p>
+        <?php
+    }
+
+    public function render_callhub_webhook_url_field() {
+        $webhook_url = rest_url('lcd-people/v1/callhub-webhook');
+        $api_key = get_option('lcd_people_callhub_api_key', '');
+        ?>
+        <div style="background: #f0f0f1; padding: 10px; border-left: 4px solid #72aee6; margin-bottom: 10px;">
+            <code style="background: white; padding: 5px; display: block; user-select: all;"><?php echo esc_url($webhook_url); ?></code>
+        </div>
+        
+        <?php if (!empty($api_key)): ?>
+            <?php $this->render_callhub_webhook_status(); ?>
+        <?php else: ?>
+            <p class="description" style="color: #d63638;">
+                <?php _e('Enter your API key above and save settings to enable webhook registration.', 'lcd-people'); ?>
+            </p>
+        <?php endif; ?>
+        
+        <p class="description" style="margin-top: 15px;">
+            <strong><?php _e('How it works:', 'lcd-people'); ?></strong> <?php _e('When a user texts STOP to your CallHub number, CallHub will notify this webhook, which automatically:', 'lcd-people'); ?>
+        </p>
+        <ul style="margin-left: 20px; list-style-type: disc;">
+            <li><?php _e('Updates the user\'s SMS preferences in your database', 'lcd-people'); ?></li>
+            <li><?php _e('Removes their phone number from Sender.net', 'lcd-people'); ?></li>
+            <li><?php _e('Ensures they\'re on the CallHub DNC list', 'lcd-people'); ?></li>
+        </ul>
+        <?php
+    }
+
+    /**
+     * Render webhook status and registration button
+     */
+    private function render_callhub_webhook_status() {
+        if (!class_exists('LCD_People_CallHub_Handler')) {
+            return;
+        }
+        
+        $handler = new LCD_People_CallHub_Handler($this->plugin_instance);
+        $status = $handler->get_webhook_status();
+        
+        ?>
+        <div id="callhub-webhook-status" style="margin: 15px 0; padding: 10px; background: <?php echo $status['registered'] ? '#d1e7dd' : '#fff3cd'; ?>; border-left: 4px solid <?php echo $status['registered'] ? '#198754' : '#ffc107'; ?>;">
+            <p style="margin: 0 0 10px 0;">
+                <strong><?php _e('Webhook Status:', 'lcd-people'); ?></strong>
+                <?php if ($status['registered']): ?>
+                    <span style="color: #198754;">
+                        <span class="dashicons dashicons-yes-alt"></span>
+                        <?php echo esc_html($status['message']); ?>
+                    </span>
+                <?php else: ?>
+                    <span style="color: #856404;">
+                        <span class="dashicons dashicons-warning"></span>
+                        <?php echo esc_html($status['message']); ?>
+                    </span>
+                <?php endif; ?>
+            </p>
+            
+            <?php if ($status['registered'] && !empty($status['webhooks'])): ?>
+                <details style="margin-bottom: 10px;">
+                    <summary style="cursor: pointer; color: #666;"><?php _e('Show registered webhooks', 'lcd-people'); ?></summary>
+                    <ul style="margin: 10px 0 0 20px; font-size: 12px;">
+                        <?php foreach ($status['webhooks'] as $webhook): ?>
+                            <li>
+                                <strong><?php echo esc_html($webhook['event'] ?? 'unknown'); ?></strong>
+                                <?php if (isset($webhook['id'])): ?>
+                                    <span style="color: #999;">(ID: <?php echo esc_html($webhook['id']); ?>)</span>
+                                <?php endif; ?>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                </details>
+            <?php endif; ?>
+            
+            <button type="button" id="register-callhub-webhook" class="button <?php echo $status['registered'] ? 'button-secondary' : 'button-primary'; ?>">
+                <?php echo $status['registered'] ? __('Re-register Webhooks', 'lcd-people') : __('Register Webhooks Now', 'lcd-people'); ?>
+            </button>
+            <span id="webhook-register-spinner" class="spinner" style="float: none; margin-left: 5px;"></span>
+            <span id="webhook-register-result" style="margin-left: 10px;"></span>
+        </div>
+        
+        <script type="text/javascript">
+        jQuery(document).ready(function($) {
+            $('#register-callhub-webhook').on('click', function() {
+                var $button = $(this);
+                var $spinner = $('#webhook-register-spinner');
+                var $result = $('#webhook-register-result');
+                
+                $button.prop('disabled', true);
+                $spinner.addClass('is-active');
+                $result.html('');
+                
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'lcd_register_callhub_webhook',
+                        nonce: '<?php echo wp_create_nonce('lcd_callhub_webhook'); ?>'
+                    },
+                    success: function(response) {
+                        $spinner.removeClass('is-active');
+                        $button.prop('disabled', false);
+                        
+                        if (response.success) {
+                            $result.html('<span style="color: #198754;">' + response.data.message + '</span>');
+                            setTimeout(function() {
+                                location.reload();
+                            }, 2000);
+                        } else {
+                            $result.html('<span style="color: #dc3545;">' + (response.data.message || 'Error registering webhook') + '</span>');
+                        }
+                    },
+                    error: function() {
+                        $spinner.removeClass('is-active');
+                        $button.prop('disabled', false);
+                        $result.html('<span style="color: #dc3545;"><?php _e('Network error. Please try again.', 'lcd-people'); ?></span>');
+                    }
+                });
+            });
+        });
+        </script>
         <?php
     }
 

@@ -182,8 +182,7 @@ class LCD_People {
 
         // Enqueue on person edit screen AND settings pages
         if (($hook == 'post-new.php' || $hook == 'post.php') && isset($post) && $post->post_type === 'lcd_person' ||
-            $hook == 'lcd_person_page_lcd-people-actblue-settings' ||
-            $hook == 'lcd_person_page_lcd-people-sender-settings') {
+            $hook == 'lcd_person_page_lcd-people-actblue-settings') {
             
             // Enqueue jQuery UI
             wp_enqueue_style('wp-jquery-ui-dialog');
