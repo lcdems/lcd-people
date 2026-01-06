@@ -894,7 +894,7 @@ class LCD_Email_Settings_Admin {
                 <h4 style="margin-top: 0;"><?php _e('Conversion Tracking Active', 'lcd-people'); ?></h4>
                 <p style="margin-bottom: 0;"><?php _e('Conversion events will be automatically fired when users complete the opt-in process:', 'lcd-people'); ?></p>
                 <ul style="margin: 10px 0 0 20px; list-style: disc;">
-                    <li><strong><?php _e('Email Signup:', 'lcd-people'); ?></strong> <?php _e('Conversion events (Google: conversion, Facebook: CompleteRegistration)', 'lcd-people'); ?></li>
+                    <li><strong><?php _e('Email Signup:', 'lcd-people'); ?></strong> <?php _e('Conversion events (Google: conversion, Facebook: Lead)', 'lcd-people'); ?></li>
                     <li><strong><?php _e('SMS Opt-in:', 'lcd-people'); ?></strong> <?php _e('Subscribe events (Google: conversion, Facebook: Subscribe)', 'lcd-people'); ?></li>
                 </ul>
             </div>

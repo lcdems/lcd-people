@@ -203,7 +203,7 @@
             }
             
             // Fire Facebook conversion
-            this.fireFacebookEvent('CompleteRegistration', {
+            this.fireFacebookEvent('Lead', {
                 content_name: 'Email Signup',
                 content_category: 'Newsletter Signup',
                 value: conversionValue
