@@ -249,6 +249,18 @@ class LCD_Email_Settings_Admin {
             'default' => ''
         ));
 
+        register_setting('lcd_email_optin_settings', 'lcd_people_optin_success_message_email', array(
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => ''
+        ));
+
+        register_setting('lcd_email_optin_settings', 'lcd_people_optin_success_message_sms', array(
+            'type' => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default' => ''
+        ));
+
         // Opt-in - Form Groups Section
         add_settings_section(
             'lcd_email_optin_groups_section',
@@ -287,6 +299,30 @@ class LCD_Email_Settings_Admin {
             array($this, 'render_sms_disclaimer_field'),
             self::OPTIN_SETTINGS_SLUG,
             'lcd_email_optin_disclaimers_section'
+        );
+
+        // Opt-in - Confirmation Messages Section
+        add_settings_section(
+            'lcd_email_optin_confirmation_section',
+            __('Confirmation Messages', 'lcd-people'),
+            array($this, 'render_confirmation_section'),
+            self::OPTIN_SETTINGS_SLUG
+        );
+
+        add_settings_field(
+            'lcd_people_optin_success_message_email',
+            __('Email-Only Confirmation', 'lcd-people'),
+            array($this, 'render_success_message_email_field'),
+            self::OPTIN_SETTINGS_SLUG,
+            'lcd_email_optin_confirmation_section'
+        );
+
+        add_settings_field(
+            'lcd_people_optin_success_message_sms',
+            __('Email + SMS Confirmation', 'lcd-people'),
+            array($this, 'render_success_message_sms_field'),
+            self::OPTIN_SETTINGS_SLUG,
+            'lcd_email_optin_confirmation_section'
         );
 
         // Opt-in - Conversion Tracking Section
@@ -866,6 +902,16 @@ class LCD_Email_Settings_Admin {
                         <td>"Sign Up"</td>
                     </tr>
                     <tr>
+                        <td><code>redirect</code></td>
+                        <td><?php _e('URL to redirect after successful submission (bypasses inline confirmation)', 'lcd-people'); ?></td>
+                        <td><em><?php _e('none', 'lcd-people'); ?></em></td>
+                    </tr>
+                    <tr>
+                        <td><code>hidephone</code></td>
+                        <td><?php _e('Set to "true" to hide the phone number field', 'lcd-people'); ?></td>
+                        <td>"false"</td>
+                    </tr>
+                    <tr>
                         <td><code>sender_groups</code></td>
                         <td><?php _e('Comma-separated Sender.net group IDs to add', 'lcd-people'); ?></td>
                         <td><em><?php _e('none', 'lcd-people'); ?></em></td>
@@ -882,6 +928,8 @@ class LCD_Email_Settings_Admin {
             <ul style="margin-left: 20px; list-style: disc;">
                 <li><code>[lcd_optin_form]</code> - <?php _e('Basic form with no title', 'lcd-people'); ?></li>
                 <li><code>[lcd_optin_form title="Join Our Newsletter" cta="Subscribe"]</code> - <?php _e('Custom title and button', 'lcd-people'); ?></li>
+                <li><code>[lcd_optin_form redirect="/thank-you/"]</code> - <?php _e('Redirect to thank-you page after submission', 'lcd-people'); ?></li>
+                <li><code>[lcd_optin_form hidephone="true"]</code> - <?php _e('Email-only form without phone field', 'lcd-people'); ?></li>
                 <li><code>[lcd_optin_form sender_groups="abc123" callhub_tags="tag1,tag2"]</code> - <?php _e('With extra groups/tags', 'lcd-people'); ?></li>
             </ul>
             
@@ -999,6 +1047,10 @@ class LCD_Email_Settings_Admin {
 
     public function render_disclaimers_section() {
         echo '<p>' . __('Configure the legal disclaimers shown on the opt-in form.', 'lcd-people') . '</p>';
+    }
+
+    public function render_confirmation_section() {
+        echo '<p>' . __('Customize the inline confirmation messages shown after successful form submission.', 'lcd-people') . '</p>';
     }
 
     public function render_tracking_section() {
@@ -1183,6 +1235,24 @@ class LCD_Email_Settings_Admin {
         ?>
         <textarea name="lcd_people_optin_sms_disclaimer" rows="3" class="large-text"><?php echo esc_textarea($value); ?></textarea>
         <p class="description"><?php _e('Shown next to the SMS consent checkbox.', 'lcd-people'); ?></p>
+        <?php
+    }
+
+    public function render_success_message_email_field() {
+        $value = get_option('lcd_people_optin_success_message_email', '');
+        $default = __('Thank you! You\'ve been added to our email list.', 'lcd-people');
+        ?>
+        <input type="text" name="lcd_people_optin_success_message_email" value="<?php echo esc_attr($value); ?>" class="large-text" placeholder="<?php echo esc_attr($default); ?>">
+        <p class="description"><?php _e('Message shown when user signs up for email only (no phone number provided).', 'lcd-people'); ?></p>
+        <?php
+    }
+
+    public function render_success_message_sms_field() {
+        $value = get_option('lcd_people_optin_success_message_sms', '');
+        $default = __('Thank you! You\'ve been added to our email and SMS lists.', 'lcd-people');
+        ?>
+        <input type="text" name="lcd_people_optin_success_message_sms" value="<?php echo esc_attr($value); ?>" class="large-text" placeholder="<?php echo esc_attr($default); ?>">
+        <p class="description"><?php _e('Message shown when user signs up for both email and SMS.', 'lcd-people'); ?></p>
         <?php
     }
 

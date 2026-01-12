@@ -16,6 +16,10 @@
             <?php if (!empty($extra_callhub_tags)): ?>
                 <input type="hidden" name="extra_callhub_tags" value="<?php echo esc_attr(implode(',', $extra_callhub_tags)); ?>">
             <?php endif; ?>
+            <?php // Hidden field for redirect URL ?>
+            <?php if (!empty($form_redirect)): ?>
+                <input type="hidden" name="redirect_url" value="<?php echo esc_url($form_redirect); ?>">
+            <?php endif; ?>
             
             <div class="lcd-form-group">
                 <label for="lcd-optin-first-name-combined"><?php _e('First Name', 'lcd-people'); ?></label>
@@ -32,10 +36,12 @@
                 <input type="email" id="lcd-optin-email-combined" name="email" required>
             </div>
             
+            <?php if (empty($form_hide_phone)): ?>
             <div class="lcd-form-group">
                 <label for="lcd-optin-phone-combined"><?php _e('Phone Number (optional)', 'lcd-people'); ?></label>
                 <input type="tel" id="lcd-optin-phone-combined" name="phone">
             </div>
+            <?php endif; ?>
             
             <?php if (count($available_groups) > 1): ?>
                 <div class="lcd-form-group">
@@ -58,6 +64,7 @@
             <?php endif; ?>
             <?php // Note: If no available_groups, form will use auto-add groups from settings ?>
             
+            <?php if (empty($form_hide_phone)): ?>
             <!-- SMS consent - only visible when phone number is entered -->
             <div class="lcd-form-group lcd-sms-consent-wrapper" id="lcd-sms-consent-wrapper-combined" style="display: none;">
                 <label class="lcd-checkbox-label lcd-sms-consent">
@@ -68,6 +75,7 @@
                     </span>
                 </label>
             </div>
+            <?php endif; ?>
             
             <?php if (!empty($settings['main_disclaimer'])): ?>
                 <div class="lcd-form-group">

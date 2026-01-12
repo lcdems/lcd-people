@@ -132,6 +132,8 @@
             
             var self = this;
             var includedSMS = phone && smsConsent;
+            var redirectUrl = $('input[name="redirect_url"]').val() || '';
+            
             $.post(lcdOptinVars.ajaxurl, formData)
                 .done(function(response) {
                     if (response.success) {
@@ -141,7 +143,13 @@
                         if (includedSMS) {
                             self.fireSMSConversionTracking();
                         }
-                        self.showSuccess(response.data.message);
+                        
+                        // If redirect URL is set, redirect instead of showing inline success
+                        if (redirectUrl) {
+                            window.location.href = redirectUrl;
+                        } else {
+                            self.showSuccess(response.data.message);
+                        }
                     } else {
                         self.showError(response.data.message || lcdOptinVars.strings.error);
                     }

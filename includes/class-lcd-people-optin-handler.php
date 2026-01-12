@@ -116,7 +116,9 @@ class LCD_People_Optin_Handler {
             'title' => '',           // Form title (empty = hidden)
             'cta' => 'Sign Up',      // Submit button text
             'sender_groups' => '',   // Comma-separated Sender.net group IDs to add
-            'callhub_tags' => ''     // Comma-separated CallHub tag IDs to add
+            'callhub_tags' => '',    // Comma-separated CallHub tag IDs to add
+            'redirect' => '',        // URL to redirect after successful submission
+            'hidephone' => 'false'   // Hide the phone number field
         ), $atts);
         
         // Parse comma-separated values into arrays
@@ -132,7 +134,9 @@ class LCD_People_Optin_Handler {
             $extra_sender_groups, 
             $extra_callhub_tags,
             $atts['title'],
-            $atts['cta']
+            $atts['cta'],
+            $atts['redirect'],
+            $atts['hidephone'] === 'true'
         );
     }
     
@@ -144,9 +148,11 @@ class LCD_People_Optin_Handler {
      * @param array $extra_callhub_tags Additional CallHub tag IDs from shortcode
      * @param string $title Form title (empty = hidden)
      * @param string $cta Submit button text
+     * @param string $redirect URL to redirect after successful submission
+     * @param bool $hide_phone Whether to hide the phone number field
      * @return string Form HTML
      */
-    public function render_optin_form($is_modal = false, $extra_sender_groups = array(), $extra_callhub_tags = array(), $title = '', $cta = 'Sign Up') {
+    public function render_optin_form($is_modal = false, $extra_sender_groups = array(), $extra_callhub_tags = array(), $title = '', $cta = 'Sign Up', $redirect = '', $hide_phone = false) {
         $settings = $this->get_optin_settings();
         $available_groups = $this->get_available_groups();
         
@@ -155,9 +161,11 @@ class LCD_People_Optin_Handler {
         
         $container_class = $is_modal ? 'lcd-optin-modal' : 'lcd-optin-embedded';
         
-        // Pass title and CTA to template
+        // Pass title, CTA, redirect, and hide_phone to template
         $form_title = $title;
         $form_cta = $cta;
+        $form_redirect = $redirect;
+        $form_hide_phone = $hide_phone;
         
         ob_start();
         include __DIR__ . '/../templates/optin-form.php';
@@ -234,14 +242,17 @@ class LCD_People_Optin_Handler {
             ));
         }
         
+        // Get custom success messages from settings
+        $settings = $this->get_optin_settings();
+        
         // Success message based on whether SMS was included
         if ($sms_consent && !empty($phone)) {
             wp_send_json_success(array(
-                'message' => __('Thank you! You\'ve been added to our email and SMS lists.', 'lcd-people')
+                'message' => $settings['success_message_sms']
             ));
         } else {
             wp_send_json_success(array(
-                'message' => __('Thank you! You\'ve been added to our email list.', 'lcd-people')
+                'message' => $settings['success_message_email']
             ));
         }
     }
@@ -485,7 +496,9 @@ class LCD_People_Optin_Handler {
     private function get_optin_settings() {
         return array(
             'main_disclaimer' => get_option('lcd_people_optin_main_disclaimer', 'By signing up, you agree to receive emails from us. You can unsubscribe at any time.'),
-            'sms_disclaimer' => get_option('lcd_people_optin_sms_disclaimer', 'By checking this box, you consent to receive text messages from us. Message and data rates may apply. Reply STOP to opt out at any time.')
+            'sms_disclaimer' => get_option('lcd_people_optin_sms_disclaimer', 'By checking this box, you consent to receive text messages from us. Message and data rates may apply. Reply STOP to opt out at any time.'),
+            'success_message_email' => get_option('lcd_people_optin_success_message_email', __('Thank you! You\'ve been added to our email list.', 'lcd-people')),
+            'success_message_sms' => get_option('lcd_people_optin_success_message_sms', __('Thank you! You\'ve been added to our email and SMS lists.', 'lcd-people'))
         );
     }
     
