@@ -47,9 +47,11 @@
         },
         
         updateCombinedButtonState: function() {
-            var email = $('#lcd-optin-email-combined').val().trim();
-            var phone = $('#lcd-optin-phone-combined').val().trim();
-            var smsConsent = $('#lcd-optin-sms-consent-combined').is(':checked');
+            var email = ($('#lcd-optin-email-combined').val() || '').trim();
+            var phoneField = $('#lcd-optin-phone-combined');
+            var phone = phoneField.length ? (phoneField.val() || '').trim() : '';
+            var smsConsentCheckbox = $('#lcd-optin-sms-consent-combined');
+            var smsConsent = smsConsentCheckbox.length ? smsConsentCheckbox.is(':checked') : true;
             var mainConsentCheckbox = $('#lcd-optin-main-consent-combined');
             var mainConsent = mainConsentCheckbox.length ? mainConsentCheckbox.is(':checked') : true;
             var submitBtn = $('#lcd-combined-submit-btn');
@@ -57,8 +59,8 @@
             // Basic email validation - email is the only required field
             var emailValid = email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
             
-            // If phone is entered, SMS consent is required
-            var smsValid = !phone || smsConsent;
+            // If phone is entered, SMS consent is required (skip check if phone field hidden)
+            var smsValid = !phoneField.length || !phone || smsConsent;
             
             if (emailValid && mainConsent && smsValid) {
                 submitBtn.prop('disabled', false);
@@ -68,7 +70,15 @@
         },
         
         updateCombinedSMSVisibility: function() {
-            var phone = $('#lcd-optin-phone-combined').val().trim();
+            var phoneField = $('#lcd-optin-phone-combined');
+            
+            // Skip if phone field doesn't exist (hidephone="true")
+            if (!phoneField.length) {
+                this.updateCombinedButtonState();
+                return;
+            }
+            
+            var phone = (phoneField.val() || '').trim();
             var smsWrapper = $('#lcd-sms-consent-wrapper-combined');
             var smsCheckbox = $('#lcd-optin-sms-consent-combined');
             
@@ -91,8 +101,10 @@
                 return;
             }
             
-            var smsConsent = $('#lcd-optin-sms-consent-combined').is(':checked');
-            var phone = $('#lcd-optin-phone-combined').val().trim();
+            var phoneField = $('#lcd-optin-phone-combined');
+            var phone = phoneField.length ? (phoneField.val() || '').trim() : '';
+            var smsConsentCheckbox = $('#lcd-optin-sms-consent-combined');
+            var smsConsent = smsConsentCheckbox.length ? smsConsentCheckbox.is(':checked') : false;
             
             // If phone is provided, SMS consent is required
             if (phone && !smsConsent) {
@@ -103,9 +115,9 @@
             var formData = {
                 action: 'lcd_optin_submit_combined',
                 nonce: lcdOptinVars.nonce,
-                first_name: $('#lcd-optin-first-name-combined').val(),
-                last_name: $('#lcd-optin-last-name-combined').val(),
-                email: $('#lcd-optin-email-combined').val(),
+                first_name: $('#lcd-optin-first-name-combined').val() || '',
+                last_name: $('#lcd-optin-last-name-combined').val() || '',
+                email: $('#lcd-optin-email-combined').val() || '',
                 phone: phone,
                 groups: [],
                 sms_consent: smsConsent ? 1 : 0,
