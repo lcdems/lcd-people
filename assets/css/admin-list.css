@@ -12,22 +12,50 @@
 
 /* Button spacing for admin actions */
 .lcd-people-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
     margin-right: 10px;
 }
 
 .lcd-people-actions .button {
-    margin-right: 5px;
+    /* WP 6.9 increased button line-height/height; flex keeps the icon and
+       label vertically centered without the old margin-top hacks. */
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Dashicons inside the action buttons */
+.lcd-people-actions .button .dashicons {
+    width: 18px;
+    height: 18px;
+    font-size: 18px;
+    line-height: 1;
+    margin: 0;
+    vertical-align: middle;
 }
 
 /* Spinner styling */
 .lcd-people-actions .spinner {
     visibility: visible;
     opacity: 0;
+    float: none;
+    margin: 0;
+    vertical-align: middle;
     transition: opacity 0.3s;
 }
 
 .lcd-people-actions .spinner.is-active {
     opacity: 1;
+}
+
+/* Keep the custom filter dropdowns aligned with WP 6.9's taller controls */
+.tablenav .actions > select,
+#posts-filter .tablenav .actions > select {
+    vertical-align: middle;
+    margin-bottom: 4px;
 }
 
 /* Results container */

@@ -280,7 +280,7 @@ class LCD_People {
                 'lcd-people-admin-list-styles', // Use a different handle than the JS
                 plugins_url('assets/css/admin-list.css', __FILE__),
                 array(),
-                '1.0.1' // Incremented version
+                '1.0.2' // Incremented version
             );
         }
     }
@@ -2059,17 +2059,17 @@ class LCD_People {
         
         // Export CSV Button
         echo '<button type="button" id="lcd-export-csv-button" class="button">' 
-             . '<span class="dashicons dashicons-download" style="margin-top: 4px;"></span> '
+             . '<span class="dashicons dashicons-download"></span>'
              . esc_html__('Export CSV', 'lcd-people') 
              . '</button>';
         
         // Sync All to Sender Button
         if (current_user_can('manage_options')) { // Only show sync button to admins
             echo '<button type="button" id="lcd-sync-all-sender-button" class="button button-secondary">' 
-                 . '<span class="dashicons dashicons-update" style="margin-top: 4px;"></span> '
+                 . '<span class="dashicons dashicons-update"></span>'
                  . esc_html__('Sync All to Sender.net', 'lcd-people') 
                  . '</button>';
-             echo '<span class="spinner" style="float: none; vertical-align: middle; margin-left: 5px;"></span>'; // Add a spinner
+             echo '<span class="spinner"></span>'; // Add a spinner
         }
 
         echo '</div>';
