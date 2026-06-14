@@ -33,7 +33,8 @@
     height: 18px;
     font-size: 18px;
     line-height: 1;
-    margin: 0;
+    /* Nudge up: the glyph sits optically low even when flex-centered */
+    margin: -2px 0 0;
     vertical-align: middle;
 }
 
