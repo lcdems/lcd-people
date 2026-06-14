@@ -867,6 +867,61 @@ class LCD_People {
     }
 
     /**
+     * Determine and persist a person's primary-member status based on email uniqueness.
+     *
+     * A person is the primary record for an email if no other published/draft person
+     * is already flagged primary for that same email. This mirrors the logic in
+     * save_meta_box_data() so that programmatic inserts (registration, etc.) end up
+     * with the same primary status they'd get from an admin save.
+     *
+     * @param int    $post_id Person post ID.
+     * @param string $email   Email address to evaluate.
+     * @return string '1' if set primary, otherwise '0'.
+     */
+    public function update_primary_member_status($post_id, $email) {
+        $email = sanitize_email($email);
+
+        if (empty($email)) {
+            update_post_meta($post_id, '_lcd_person_is_primary', '0');
+            delete_post_meta($post_id, '_lcd_person_actual_primary_id');
+            return '0';
+        }
+
+        $existing_primary_query = new WP_Query(array(
+            'post_type' => 'lcd_person',
+            'posts_per_page' => 1,
+            'fields' => 'ids',
+            'post__not_in' => array($post_id),
+            'meta_query' => array(
+                'relation' => 'AND',
+                array(
+                    'key' => '_lcd_person_email',
+                    'value' => $email,
+                    'compare' => '='
+                ),
+                array(
+                    'key' => '_lcd_person_is_primary',
+                    'value' => '1',
+                    'compare' => '='
+                )
+            )
+        ));
+        $existing_primary_id = $existing_primary_query->posts ? $existing_primary_query->posts[0] : false;
+
+        if ($existing_primary_id) {
+            // Another primary already exists for this email; this record is secondary.
+            update_post_meta($post_id, '_lcd_person_actual_primary_id', $existing_primary_id);
+            update_post_meta($post_id, '_lcd_person_is_primary', '0');
+            return '0';
+        }
+
+        // No other primary exists for this email; this record becomes primary.
+        delete_post_meta($post_id, '_lcd_person_actual_primary_id');
+        update_post_meta($post_id, '_lcd_person_is_primary', '1');
+        return '1';
+    }
+
+    /**
      * Register REST API endpoint
      */
     public function register_rest_endpoint() {
@@ -2758,6 +2813,19 @@ class LCD_People {
         // Set registration date
         update_post_meta($person_id, '_lcd_person_registration_date', current_time('Y-m-d'));
 
+        // Determine primary-member status now that the email meta is set.
+        // (save_meta_box_data() bails on programmatic inserts because there's no
+        // nonce, so primary status would otherwise never be assigned here.)
+        $this->update_primary_member_status($person_id, $user->user_email);
+
+        // Sync to Sender.net now that email + primary status exist. The save_post
+        // sync that fired during wp_insert_post() ran before any meta was written,
+        // so it skipped this record. Re-sync here to keep intake in parity with the
+        // bulk "Sync All" backfill. Automation triggers stay off for new sign-ups.
+        if ($this->sender_handler) {
+            $this->sender_handler->sync_person_to_sender($person_id, false);
+        }
+
         // Fire action for other plugins/themes to hook into
         do_action('lcd_person_created_from_registration', $person_id, $user_id);
 
@@ -3268,50 +3336,7 @@ class LCD_People {
 
         // Handle Primary Member (Automatic Assignment)
         $email = isset($_POST['lcd_person_email']) ? sanitize_email($_POST['lcd_person_email']) : '';
-        // $submitted_is_primary = isset($_POST['lcd_person_is_primary']) ? '1' : '0'; // Removed - no longer submitted
-        $is_primary_final = '0'; // Default to not primary
-
-        if (!empty($email)) {
-            // Find if another primary person exists with this email
-            $args = array(
-                'post_type' => 'lcd_person',
-                'posts_per_page' => 1,
-                'fields' => 'ids',
-                'post__not_in' => array($post_id), // Exclude current post
-                'meta_query' => array(
-                    'relation' => 'AND',
-                    array(
-                        'key' => '_lcd_person_email',
-                        'value' => $email,
-                        'compare' => '='
-                    ),
-                    array(
-                        'key' => '_lcd_person_is_primary',
-                        'value' => '1',
-                        'compare' => '='
-                    )
-                )
-            );
-            $existing_primary_query = new WP_Query($args);
-            $existing_primary_id = $existing_primary_query->posts ? $existing_primary_query->posts[0] : false;
-
-            if ($existing_primary_id) {
-                // Another primary exists, current post *must* be secondary
-                $is_primary_final = '0';
-                // Store the ID of the actual primary for display in the meta box notice
-                update_post_meta($post_id, '_lcd_person_actual_primary_id', $existing_primary_id);
-            } else {
-                // No other primary exists for this email, this one *must* be primary
-                $is_primary_final = '1';
-                delete_post_meta($post_id, '_lcd_person_actual_primary_id');
-            }
-           
-        } else {
-            // No email, cannot be primary
-            $is_primary_final = '0';
-            delete_post_meta($post_id, '_lcd_person_actual_primary_id');
-        }
-        update_post_meta($post_id, '_lcd_person_is_primary', $is_primary_final);
+        $this->update_primary_member_status($post_id, $email);
 
         // If ActBlue line item ID is set, update the line item URL
         if (isset($_POST['lcd_person_actblue_lineitem_id']) && !empty($_POST['lcd_person_actblue_lineitem_id'])) {
