@@ -121,7 +121,11 @@ class LCD_People {
         add_action('lcd_person_actblue_created', array($this, 'handle_person_sync'), 10, 1);
         add_action('lcd_person_actblue_updated', array($this, 'handle_person_sync'), 10, 1);
         add_action('lcd_member_status_changed', array($this, 'handle_person_sync'), 10, 1);
-        add_action('save_post_lcd_person', array($this, 'handle_person_save'), 10, 3);
+        // Priority 20 (after save_meta_box_data at default priority 10) so the sync
+        // reads the freshly-saved field values. Note: the 'save_post_{type}' hook
+        // fires BEFORE the generic 'save_post', so we must use 'save_post' here
+        // rather than 'save_post_lcd_person' to run after the meta box save.
+        add_action('save_post', array($this, 'handle_person_save'), 20, 3);
 
         
 
@@ -848,20 +852,12 @@ class LCD_People {
             return;
         }
 
-        // Store previous status before any changes
-        $previous_status = get_post_meta($post_id, '_lcd_person_membership_status', true);
-        
-        // Let the normal save process happen
-        // Note: save_meta_box_data is called automatically via the 'save_post' hook action added in the constructor
-        // We don't need to call it explicitly here.
-
-        // Update the previous status meta after potential changes in save_meta_box_data
-        $current_status = get_post_meta($post_id, '_lcd_person_membership_status', true);
-        update_post_meta($post_id, '_lcd_person_previous_status', $previous_status);
-
-        // Sync to Sender.net - disable automation triggers for admin updates
-        // This sync will check for primary status internally
-        $this->sender_handler->sync_person_to_sender($post_id, false); 
+        // Sync to Sender.net - disable automation triggers for admin updates.
+        // This runs at 'save_post' priority 20, i.e. AFTER save_meta_box_data()
+        // has persisted the submitted values, so the sync sends the updated data.
+        // sync_person_to_sender() checks primary status internally and self-manages
+        // the '_lcd_person_previous_status' tracking meta on each successful sync.
+        $this->sender_handler->sync_person_to_sender($post_id, false);
 
         // Sync record logging is handled within sync_person_to_sender
     }
